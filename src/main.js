@@ -12,6 +12,7 @@ import { createNavigator, routeLength } from "./navigation.js";
 import { createCartographer } from "./cartography.js";
 import { HISTORIC_STOPS, SETTING_NOTE } from "./history.js";
 import { DEFAULT_TIME, MINUTES_PER_REAL_SECOND, timeOfDay, accessAt, hearingScale, canRest } from "./day-cycle.js";
+import { foldedGarment, loomTexture, combine } from "./visual-detail.js";
 import { createCityLife } from "./city-life.js";
 
 const $ = (id) => document.getElementById(id);
@@ -43,9 +44,9 @@ const waterSurfaceY = 0.02;
 const waterFloorY = -1.54;
 const compactDevice = innerWidth <= 820 || matchMedia("(pointer: coarse)").matches;
 const renderQuality = {
-  minPixelRatio: compactDevice ? 0.72 : 0.82,
-  maxPixelRatio: Math.min(devicePixelRatio, compactDevice ? 1 : 1.2),
-  pixelRatio: Math.min(devicePixelRatio, compactDevice ? 0.9 : 1.2),
+  minPixelRatio: compactDevice ? 0.85 : 1,
+  maxPixelRatio: Math.min(devicePixelRatio, compactDevice ? 1.25 : 2),
+  pixelRatio: Math.min(devicePixelRatio, compactDevice ? 1 : 1.5),
   upgradeWindows: 0,
   lastFps: 60,
   shadows: true,
@@ -216,7 +217,12 @@ scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).textur
 scene.environmentIntensity = 0.24;
 pmremGenerator.dispose();
 
-const composer = new EffectComposer(renderer);
+// Multisample geometry edges without FXAA blurring fine texture detail.
+const renderTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
+  type: THREE.HalfFloatType,
+  samples: compactDevice ? 0 : Math.min(2, renderer.capabilities.maxSamples),
+});
+const composer = new EffectComposer(renderer, renderTarget);
 composer.addPass(new RenderPass(scene, camera));
 const gradePass = new ShaderPass({
   uniforms: {
@@ -240,18 +246,19 @@ const gradePass = new ShaderPass({
       vec3 color = texture2D(tDiffuse, vUv).rgb;
       float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
       color = mix(vec3(luma), color, 0.94);
-      color = (color - 0.5) * 1.045 + 0.5;
+      color = (color - 0.5) * 1.015 + 0.5;
       color += vec3(-0.014, 0.006, 0.038) * smoothstep(0.48, 1.0, luma);
       color += vec3(-0.012, 0.002, 0.024) * smoothstep(0.5, 0.0, luma);
       float vignette = smoothstep(0.84, 0.28, length(vUv - 0.5));
-      color *= mix(0.84, 1.0, vignette);
-      color += (hash(vUv * vec2(1733.0, 947.0)) - 0.5) * 0.007;
+      color *= mix(0.95, 1.0, vignette);
+      // No film grain: preserve masonry, mail and distant silhouettes.
       gl_FragColor = vec4(color, 1.0);
     }
   `,
 });
 composer.addPass(gradePass);
 const fxaaPass = new ShaderPass(FXAAShader);
+fxaaPass.enabled = compactDevice;
 composer.addPass(fxaaPass);
 composer.addPass(new OutputPass());
 
@@ -276,7 +283,8 @@ scene.add(moonTarget);
 moonLight.target = moonTarget;
 moonLight.position.copy(moonDirection).multiplyScalar(92);
 moonLight.castShadow = true;
-moonLight.shadow.mapSize.set(1024, 1024);
+const shadowResolution = compactDevice ? 1024 : 2048;
+moonLight.shadow.mapSize.set(shadowResolution, shadowResolution);
 moonLight.shadow.camera.left = -47;
 moonLight.shadow.camera.right = 47;
 moonLight.shadow.camera.top = 47;
@@ -458,6 +466,9 @@ if (import.meta.env.DEV) {
         vessels: arena.vesselRenderBudget,
         objects: arena.objectRenderBudget,
         guardModel: guards[0]?.modelBudget || null,
+        civilians: cityLife.modelBudget,
+        surfaceTextures: arena.surfaceTextures.map(t=>({name:t.image?.currentSrc?.split("/").slice(-2).join("/"),width:t.image?.width || 0})),
+        quality: {textureResolution:arena.textureResolution, pixelRatio:renderer.getPixelRatio(), samples:renderTarget.samples, shadowResolution},
         missionObjects: missionObjects.modelBudget,
       };
     },
@@ -588,11 +599,11 @@ if (import.meta.env.DEV) {
 }
 
 const guardShieldShape = new THREE.Shape();
-guardShieldShape.moveTo(-0.36, 0.48);
-guardShieldShape.lineTo(0.36, 0.48);
-guardShieldShape.lineTo(0.39, -0.06);
-guardShieldShape.lineTo(0, -0.68);
-guardShieldShape.lineTo(-0.39, -0.06);
+guardShieldShape.moveTo(-0.30, 0.35);
+guardShieldShape.lineTo(0.30, 0.35);
+guardShieldShape.lineTo(0.28, -0.06);
+guardShieldShape.quadraticCurveTo(0.20, -0.32, 0, -0.48);
+guardShieldShape.quadraticCurveTo(-0.20, -0.32, -0.28, -0.06);
 guardShieldShape.closePath();
 const guardVisionRange = 15;
 const guardVisionWidth = Math.tan(THREE.MathUtils.degToRad(33)) * guardVisionRange;
@@ -632,11 +643,11 @@ const mergeParts = (parts) => mergeGeometries(
 );
 const eyeParts = [-1, 1].flatMap((side) => [
   {
-    geometry: new THREE.SphereGeometry(0.018, 6, 4),
+    geometry: new THREE.SphereGeometry(0.010, 10, 8),
     position: [side * 0.065, 0.02, 0.279],
   },
   {
-    geometry: new THREE.BoxGeometry(0.065, 0.012, 0.012),
+    geometry: new THREE.BoxGeometry(0.050, 0.008, 0.009),
     position: [side * 0.065, 0.071, 0.273],
     rotation: [0, 0, side * -0.08],
   },
@@ -652,29 +663,29 @@ const guardGeometries = {
       position: [0, -0.19, 0],
     },
   ]),
-  surcoat: new THREE.CylinderGeometry(0.3, 0.4, 1.02, 12),
-  belt: new THREE.BoxGeometry(0.71, 0.085, 0.48),
+  surcoat: foldedGarment(.34, .29, .36, 1.02),
+  belt: new THREE.TorusGeometry(.30,.032,6,32).rotateX(Math.PI/2).scale(1,1,.74),
   beltBuckle: new THREE.BoxGeometry(0.11, 0.13, 0.035),
   surcoatHeraldry: mergeParts([
     {
       geometry: new THREE.BoxGeometry(0.09, 0.48, 0.035),
-      position: [0, 0.18, 0.335],
+      position: [0, 0.18, 0.231],
     },
     {
       geometry: new THREE.BoxGeometry(0.34, 0.085, 0.04),
-      position: [0, 0.26, 0.337],
+      position: [0, 0.26, 0.237],
     },
   ]),
   headSkin: mergeParts([
     {
-      geometry: new THREE.SphereGeometry(0.19, 16, 10),
+      geometry: new THREE.SphereGeometry(0.19, 32, 24),
       position: [0, -0.02, 0.105],
       scale: [0.9, 1.08, 0.9],
     },
     {
-      geometry: new THREE.ConeGeometry(0.043, 0.13, 7),
-      position: [0, -0.035, 0.277],
-      rotation: [Math.PI / 2, 0, 0],
+      geometry: new THREE.SphereGeometry(0.026, 12, 10),
+      position: [0, -0.022, 0.275],
+      scale: [1, 1.8, 1.2],
     },
     {
       geometry: new THREE.SphereGeometry(0.043, 6, 4),
@@ -691,17 +702,21 @@ const guardGeometries = {
   faceBearded: mergeParts([
     ...eyeParts,
     {
-      geometry: new THREE.ConeGeometry(0.17, 0.23, 9),
-      position: [0, -0.14, 0.225],
-      rotation: [0, 0, Math.PI],
-      scale: [1, 1, 0.42],
+      geometry: new THREE.SphereGeometry(.181, 28, 12, 0, Math.PI*2, Math.PI*.60, Math.PI*.40),
+      position: [0, -.017, .114],
+      scale: [.89, 1.02, .97],
     },
   ]),
-  coif: new THREE.SphereGeometry(0.235, 16, 10),
+  coif: new THREE.SphereGeometry(0.235, 28, 20),
+  kettleHelmet: combine([
+    {geometry:new THREE.SphereGeometry(.255,28,16,0,Math.PI*2,0,Math.PI/2),position:[0,.08,0],scale:[1,.78,1]},
+    {geometry:new THREE.CylinderGeometry(.34,.37,.048,32),position:[0,.085,0]},
+    ...Array.from({length:12},(_,i)=>({geometry:new THREE.SphereGeometry(.014,6,4),position:[Math.sin(i*Math.PI/6)*.254,.10,Math.cos(i*Math.PI/6)*.254]})),
+  ]),
   helmetIron: mergeParts([
     {
-      geometry: new THREE.ConeGeometry(0.255, 0.32, 16),
-      position: [0, 0.205, 0],
+      geometry: new THREE.SphereGeometry(.255,28,16,0,Math.PI*2,0,Math.PI/2).scale(1,.85,1),
+      position: [0, 0.09, 0],
     },
     {
       geometry: new THREE.CylinderGeometry(0.29, 0.29, 0.05, 16),
@@ -723,7 +738,7 @@ const guardGeometries = {
     },
   ]),
   leg: new THREE.CapsuleGeometry(0.105, 0.5, 5, 10),
-  boot: new THREE.BoxGeometry(0.22, 0.2, 0.34),
+  boot: new THREE.SphereGeometry(.12, 16, 10).scale(.87,.72,1.5),
   arm: new THREE.CapsuleGeometry(0.085, 0.46, 5, 10),
   spearShaft: new THREE.CylinderGeometry(0.025, 0.035, 2.6, 8),
   spearPoint: new THREE.ConeGeometry(0.09, 0.32, 8),
@@ -796,42 +811,26 @@ const createGuardSurface = (size, painter, repeatX = 1, repeatY = 1) => {
   texture.anisotropy = 4;
   return texture;
 };
-const mailTexture = createGuardSurface(128, (context, size) => {
+const mailTexture = createGuardSurface(1024, (context, size) => {
   context.fillStyle = "#8f9692";
   context.fillRect(0, 0, size, size);
-  context.lineWidth = 1.45;
-  for (let row = -1; row < 18; row += 1) {
-    for (let column = -1; column < 18; column += 1) {
-      const x = column * 8 + (row % 2 ? 4 : 0);
-      const y = row * 7;
+  context.lineWidth = 2.1;
+  for (let row = -1; row < 74; row += 1) {
+    for (let column = -1; column < 66; column += 1) {
+      const x = column * 16 + (row % 2 ? 8 : 0);
+      const y = row * 14;
       context.strokeStyle = "rgba(25,29,28,.72)";
       context.beginPath();
-      context.ellipse(x, y, 3.7, 2.7, 0, 0, Math.PI * 2);
+      context.ellipse(x, y, 7.1, 5.1, 0, 0, Math.PI * 2);
       context.stroke();
       context.strokeStyle = "rgba(230,235,224,.42)";
       context.beginPath();
-      context.arc(x - 0.5, y - 0.6, 2.7, Math.PI * 1.05, Math.PI * 1.78);
+      context.arc(x - 0.5, y - 1.2, 5.2, Math.PI * 1.05, Math.PI * 1.78);
       context.stroke();
     }
   }
-}, 3, 4);
-const clothTexture = createGuardSurface(128, (context, size) => {
-  context.fillStyle = "#c8bca7";
-  context.fillRect(0, 0, size, size);
-  for (let line = 0; line < size; line += 3) {
-    context.fillStyle = line % 6
-      ? "rgba(52,37,26,.045)"
-      : "rgba(255,247,219,.07)";
-    context.fillRect(0, line, size, 1);
-    context.fillRect(line, 0, 1, size);
-  }
-  const wear = context.createLinearGradient(0, 0, size, size);
-  wear.addColorStop(0, "rgba(255,255,255,.06)");
-  wear.addColorStop(0.58, "rgba(255,255,255,0)");
-  wear.addColorStop(1, "rgba(48,31,19,.18)");
-  context.fillStyle = wear;
-  context.fillRect(0, 0, size, size);
-}, 2, 3);
+}, 1, 1.5);
+const clothTexture = loomTexture();
 const leatherTexture = createGuardSurface(128, (context, size) => {
   context.fillStyle = "#765035";
   context.fillRect(0, 0, size, size);
@@ -848,11 +847,11 @@ const leatherTexture = createGuardSurface(128, (context, size) => {
 }, 2, 3);
 const guardMaterials = {
   chainmail: new THREE.MeshStandardMaterial({
-    color: 0x68706d,
+    color: 0x9b9f9b,
     map: mailTexture,
     bumpMap: mailTexture,
-    bumpScale: 0.026,
-    metalness: 0.48,
+    bumpScale: 0.012,
+    metalness: 0.72,
     roughness: 0.62,
   }),
   orders: Object.fromEntries(
@@ -917,6 +916,7 @@ function createGuard(index, position, options = {}) {
   torso.name = "Guard torso pivot";
   const body = new THREE.Mesh(guardGeometries.torsoArmor, chainmail);
   body.name = "Merged mail hauberk and skirt";
+  body.scale.set(.93,1,.66);
   const surcoat = new THREE.Mesh(guardGeometries.surcoat, cloth);
   surcoat.position.set(0, 0.02, 0.015);
   surcoat.name = "Wool guard surcoat";
@@ -933,6 +933,7 @@ function createGuard(index, position, options = {}) {
 
   const headGroup = new THREE.Group();
   headGroup.position.y = 1.84;
+  headGroup.scale.setScalar(.88);
   headGroup.name = "Guard head pivot";
   const head = new THREE.Mesh(guardGeometries.headSkin, skin);
   head.name = "Guard face with ears and nose";
@@ -940,8 +941,8 @@ function createGuard(index, position, options = {}) {
   coif.scale.set(1, 1.16, 0.94);
   coif.position.z = -0.025;
   coif.name = "Chainmail coif";
-  const helmet = new THREE.Mesh(guardGeometries.helmetIron, iron);
-  helmet.name = "Merged nasal helmet";
+  const helmet = new THREE.Mesh(index % 3 === 0 ? guardGeometries.kettleHelmet : guardGeometries.helmetIron, iron);
+  helmet.name = index % 3 === 0 ? "Riveted iron kettle hat" : "Rounded iron cap with nasal guard";
   const faceDetails = new THREE.Mesh(
     index % 3 === 1 ? guardGeometries.faceBare : guardGeometries.faceBearded,
     hair,
@@ -968,7 +969,7 @@ function createGuard(index, position, options = {}) {
     armPivot.position.set(side * 0.39, 1.48, 0.03);
     armPivot.rotation.z = side * -0.1;
     armPivot.name = "Guard shoulder pivot";
-    const arm = new THREE.Mesh(guardGeometries.arm, cloth);
+    const arm = new THREE.Mesh(guardGeometries.arm, chainmail);
     arm.position.y = -0.25;
     armPivot.add(arm);
     return armPivot;
@@ -989,7 +990,7 @@ function createGuard(index, position, options = {}) {
   shieldAssembly.position.set(-0.03, -0.26, 0.24);
   shieldAssembly.name = "Guard shield assembly";
   const shield = new THREE.Mesh(guardGeometries.shield, cloth);
-  shield.name = "Kite shield";
+  shield.name = "Curved mid-thirteenth-century heater shield";
   const shieldHeraldry = new THREE.Mesh(guardGeometries.shieldHeraldry, heraldry);
   shieldHeraldry.name = "Merged shield cross";
   shieldHeraldry.visible = order.showCross;
@@ -997,7 +998,8 @@ function createGuard(index, position, options = {}) {
   shieldBoss.position.set(0, 0.02, 0.115);
   shieldBoss.scale.z = 0.45;
   shieldBoss.name = "Forged shield boss";
-  shieldAssembly.add(shield, shieldHeraldry, shieldBoss);
+  shieldAssembly.add(shield, shieldHeraldry);
+  shieldHeraldry.scale.set(.9,.8,1);
   arms[0].add(shieldAssembly);
 
   const coneMaterial = new THREE.MeshBasicMaterial({
@@ -1012,6 +1014,7 @@ function createGuard(index, position, options = {}) {
 
   const detailRoot = new THREE.Group();
   detailRoot.name = "Guard full-detail model";
+  detailRoot.scale.set(.82,.9,.82);
   detailRoot.add(
     torso,
     headGroup,
@@ -1024,6 +1027,7 @@ function createGuard(index, position, options = {}) {
   );
   farBody.name = "Guard distance silhouette";
   farBody.position.y = 0;
+  farBody.scale.copy(detailRoot.scale);
   farBody.visible = false;
   farBody.castShadow = true;
   farBody.receiveShadow = true;
@@ -1819,7 +1823,7 @@ function updateGuards(dt) {
     const stateBeforeSense = guard.state;
 
     const distance = guard.root.position.distanceTo(player.position);
-    const fullDetail = distance < 22;
+    const fullDetail = distance < (compactDevice ? 24 : 38);
     guard.detailRoot.visible = fullDetail;
     guard.farBody.visible = !fullDetail;
     const suspicious = access.suspicious || game.elapsed < guard.identifiedUntil;
@@ -1989,7 +1993,7 @@ function updateGuards(dt) {
     guard.legs[0].rotation.x = gait * 0.34;
     guard.legs[1].rotation.x = -gait * 0.34;
     // The equipment-bearing arms move less than a free walking swing, keeping
-    // the kite shield braced and the spear upright while still feeling alive.
+    // the heater shield braced and the spear upright while still feeling alive.
     guard.arms[0].rotation.x = -gait * 0.075;
     guard.arms[1].rotation.x = gait * 0.065;
     guard.head.rotation.y =
@@ -3029,7 +3033,7 @@ addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   renderQuality.maxPixelRatio = Math.min(
     devicePixelRatio,
-    innerWidth <= 820 ? 1 : 1.2,
+    innerWidth <= 820 ? 1.25 : 2,
   );
   renderQuality.pixelRatio = Math.min(renderQuality.pixelRatio, renderQuality.maxPixelRatio);
   applyRenderSize();
@@ -3076,7 +3080,9 @@ function updateAdaptiveQuality(now) {
     const renderOverloaded =
       p95RenderMs > 16 ||
       averageRenderMs > 12 ||
-      (measuredFps < 55 && p95RenderMs > 3);
+      // Driver submission time can be low while Retina fill-rate is saturated.
+      // Respect actual frame cadence too; never undersample desktop below 1×.
+      measuredFps < 52;
     const renderHasHeadroom =
       measuredFps >= 58 &&
       p95RenderMs > 0 &&

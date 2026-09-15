@@ -41,7 +41,7 @@ major districts, and compresses real distances to keep a stealth run readable.
   approaches with dense houses, arcaded markets, awnings, amphorae, and stores.
 - The Cathedral close provides the principal ecclesiastical landmark.
 - Byzantine and earlier continuity is expressed through reused column drums,
-  foundations, cistern-like water features, masonry, and a domed chapel form.
+  foundations, cistern-like water features, and masonry.
   The visible thirteenth-century city is correctly described as Frankish rather
   than wholly Byzantine.
 
@@ -84,7 +84,8 @@ Buildings, roof forms, ward boundaries and the detailed placement of gateways
 are interpretive. The playable plan compresses distances and simplifies
 architecture. Residential infill suggests lime-plastered dwellings and flat
 roofs without claiming an excavation record for those individual houses.
-The cathedral elevation and decorative dome are particularly conjectural.
+The cathedral elevation and apsidal roof are particularly conjectural; the
+earlier decorative dome has been removed rather than implying it is documented.
 
 The eight exploration stops label their evidence explicitly. An excavated
 complex does not imply that all of its rendered upper floors survive. The map
@@ -111,7 +112,73 @@ historical hospital, or the city's actual population. The one-hour rest action
 compresses time without simulating a historical lodging or sleep system.
 Sunlight changes direction; the stars retain their fixed field for readability.
 
-## Primary research anchors
+## Close-up visual reconstruction
+
+The September 2026 detail pass uses the following evidence. It does not treat
+modern photographs of Ottoman Acre, modern museum lighting, or later European
+armour as a view of the city in 1250. All new models and drawn textures are
+original; reference photographs and manuscript pages are not game assets.
+
+- **Domestic architecture.** The IAA's [Youth Hostel excavation](https://hadashot.iaa.org.il/Report_Detail_Eng.aspx?id=25557)
+  records thirteenth-century buildings with kurkar ashlar corners, a paved court,
+  stairs, cistern access, and plastered walls and vaults. Houses now have dressed
+  quoins, differentiated masonry/plaster, window reveals, timber ends and storey
+  courses. These are a plausible architectural vocabulary, not a recovered
+  elevation for every house. Roof types, shutter colours, timber placement and
+  street-facing window arrangements remain interpretations.
+- **Monumental masonry.** The official [Knights Halls account](https://www.akko.org.il/en/attraction/the-knights-halls/)
+  describes multi-storey ranges around a court, round columns, barrel and groin
+  vaults, carved capitals and Romanesque–Gothic elements. The game's arches now
+  have individually modelled wedge-shaped stones and shallow bevels instead of
+  rounded torus tubes. The cathedral's silhouette is explicitly reconstructed;
+  its earlier unsupported decorative dome is no longer used.
+- **Guards and knights.** The Met's [survey of armour, 1000–1300](https://www.metmuseum.org/essays/fashion-in-european-armor-1000-1300)
+  supports mail shirts and coifs, belted surcoats, nasal helmets and war hats.
+  Guards have visible ring texture, mail sleeves, gathered cloth, rounded iron
+  caps or kettle hats, leather footwear and smaller heater-form shields. They
+  are watchmen and men-at-arms, not a city of plate-armoured tournament knights.
+  Exact equipment mixes, heraldry placement and uniform colours remain gameplay
+  choices. The existing white/red Templar scheme represents knight-brothers,
+  not every member or servant of the order.
+- **People.** The Morgan's [Crusader Bible Ruth cycle](https://www.themorgan.org/exhibitions/book-of-ruth)
+  and [MS M.638, fol. 18v](https://ica.themorgan.org/manuscript/page/36/158530)
+  provide mid-thirteenth-century comparisons for belted tunics, longer garments,
+  head coverings and work clothing. Citizens now have cloth folds, visible
+  hands, faces, shoes, belts, pouches, caps and draped veils. This is French
+  manuscript evidence, not a census or direct depiction of Acre. The population
+  uses varied appearances without assigning religion, language or origin from
+  skin colour or dress. A full representation of Acre's many communities is
+  beyond these small shared character models.
+- **Ships.** Kahanov and Stern's *Ship Graffiti from Akko (Acre)*, *Mariner's Mirror*
+  94 (2008), pp. 21–35, concerns local ship depictions. For a readable scholarly
+  discussion of Mediterranean versus northern rigs, see [Zwick's dissertation](https://macau.uni-kiel.de/servlets/MCRFileNodeServlet/dissertation_derivate_00006964/Diss_Zwick2017.pdf),
+  pp. 265–266. The vessels use rounded timber hulls, deck planks, hatch coamings,
+  quarter steering oars, rope shrouds and triangular lateen sails aligned
+  fore-and-aft. They are interpreted small merchant/coastal craft, not measured
+  reconstructions of particular Acre vessels. The model does not import the
+  much later high-sterned galleon silhouette, cannon, or ship's wheel.
+- **Everyday objects.** The IAA's [East Acre excavation](https://hadashot.iaa.org.il/report_detail_eng.aspx?id=237&mag_id=110)
+  identifies local coarse jars, Acre bowls, cooking wares and imported ceramics.
+  The analytical [study of Acre ceramics](https://cris.haifa.ac.il/en/publications/ceramics-of-the-crusader-period-found-in-acre-an-inaa-and-icp-stu/)
+  includes amphorae, glazed cooking pots and sgraffito bowls. Open eating and
+  glazed serving bowls now accompany smoother transport jars and coopered
+  barrels. Profiles and incised designs suggest documented types; they are not
+  labelled replicas of individual excavated finds. Movable objects retain their
+  collision/noise behaviour.
+
+### Surface assets and display choices
+
+Desktop surface colour and normal maps use original 2048-pixel CC0 files from
+Poly Haven; compact/coarse-pointer and reported low-memory devices keep the
+1024-pixel derivatives. These are generic scans used as material analogues,
+not photographs or mineralogical samples from Acre. Roughness maps stay at 1K.
+Wood, sailcloth, mail and clothing use higher-resolution original procedural
+textures. Texture scale is corrected on towers and decks. Film grain is removed;
+sharper edges and shadows are display improvements, not changes to guard sight.
+The renderer retains instancing, distance detail, static batching and adaptive
+resolution; this remains a stylised browser game, not a photogrammetric city.
+
+## Core reference links
 
 - UNESCO World Heritage Centre, [Old City of Acre](https://whc.unesco.org/en/list/1042/)
 - UNESCO, [Old City of Acre nomination file](https://whc.unesco.org/uploads/nominations/1042.pdf)

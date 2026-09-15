@@ -1,5 +1,6 @@
 import { mergeGeometries as mergeBufferGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { ACRE_PLAN, pointInPolygon } from "./acre-plan.js";
+import { voussoirArch, decorateHouse, merchantHull, vesselDetailParts, potteryDisplay, sgraffitoTexture, combine } from "./visual-detail.js";
 import { HISTORIC_STOPS } from "./history.js";
 
 export function mergeGeometries(geometries, useGroups = false) {
@@ -165,7 +166,7 @@ export function buildArena(THREE, scene) {
     },
     shutters: {
       materialVariants: 2,
-      textureSize: 128,
+      textureSize: 512,
       frontLeaves: 0,
       sideLeaves: 0,
       staticTriangles: 0,
@@ -461,11 +462,12 @@ export function buildArena(THREE, scene) {
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(repeatX, repeatY);
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 4;
+    texture.anisotropy = 16;
     return texture;
   };
 
-  const assetPath = (file) => `${import.meta.env.BASE_URL}assets/textures/${file}`;
+  const highDetailTextures = typeof matchMedia === "function" && !matchMedia("(max-width: 820px), (pointer: coarse)").matches && (navigator.deviceMemory || 8) >= 4;
+  const assetPath = (file) => `${import.meta.env.BASE_URL}assets/textures/${highDetailTextures && !file.includes("rough") ? "2k/" : ""}${file}`;
   const textureLoader = new THREE.TextureLoader();
   const loadSurface = (file, { color = false, anisotropy = 8 } = {}) => {
     const texture = textureLoader.load(assetPath(file));
@@ -496,13 +498,13 @@ export function buildArena(THREE, scene) {
   };
   const cityRandom = seededPainter(0xac1250);
   const woodTexture = canvasTexture(
-    256,
+    1024,
     (ctx, s) => {
       const random = seededPainter(0xa4c3);
       const base = ctx.createLinearGradient(0, 0, s, 0);
-      base.addColorStop(0, "#4b2b18");
-      base.addColorStop(0.48, "#785032");
-      base.addColorStop(1, "#422414");
+      base.addColorStop(0, "#68553e");
+      base.addColorStop(0.48, "#968064");
+      base.addColorStop(1, "#62533e");
       ctx.fillStyle = base;
       ctx.fillRect(0, 0, s, s);
       for (let plank = 0; plank < 8; plank += 1) {
@@ -552,7 +554,7 @@ export function buildArena(THREE, scene) {
     3,
     2,
   );
-  const shutterTexture = canvasTexture(128, (ctx, s) => {
+  const shutterTexture = canvasTexture(512, (ctx, s) => {
     const random = seededPainter(0x5a177e);
     ctx.fillStyle = "#c7c0aa";
     ctx.fillRect(0, 0, s, s);
@@ -581,7 +583,7 @@ export function buildArena(THREE, scene) {
         ctx.stroke();
       }
     }
-    for (const y of [29, 94]) {
+    for (const y of [s * .226, s * .734]) {
       ctx.fillStyle = "rgba(38,26,16,.28)";
       ctx.fillRect(0, y + 6, s, 3);
       ctx.fillStyle = "rgba(207,196,169,.72)";
@@ -611,9 +613,9 @@ export function buildArena(THREE, scene) {
     ctx.fillStyle = edgeWear;
     ctx.fillRect(0, 0, s, s);
   });
-  shutterTexture.name = "128px shared worn-painted shutter atlas";
-  shutterTexture.anisotropy = 2;
-  const sailTexture = canvasTexture(256, (ctx, s) => {
+  shutterTexture.name = "512px shared worn-painted shutter atlas";
+  shutterTexture.anisotropy = 8;
+  const sailTexture = canvasTexture(1024, (ctx, s) => {
     const random = seededPainter(0x51a1);
     ctx.fillStyle = "#d8cba8";
     ctx.fillRect(0, 0, s, s);
@@ -641,9 +643,9 @@ export function buildArena(THREE, scene) {
     ctx.fillStyle = edgeWear;
     ctx.fillRect(0, 0, s, s);
   });
-  const potteryTexture = canvasTexture(256, (ctx, s) => {
+  const potteryTexture = canvasTexture(512, (ctx, s) => {
     const random = seededPainter(0xac4e);
-    ctx.fillStyle = "#b75e3e";
+    ctx.fillStyle = "#b79370";
     ctx.fillRect(0, 0, s, s);
     for (let y = 0; y < s; y += 7) {
       ctx.fillStyle = y % 21
@@ -662,7 +664,7 @@ export function buildArena(THREE, scene) {
       ctx.fill();
     }
   }, 2, 3);
-  const sackTexture = canvasTexture(128, (ctx, s) => {
+  const sackTexture = canvasTexture(512, (ctx, s) => {
     const random = seededPainter(0x5ac7);
     ctx.fillStyle = "#a88a5a";
     ctx.fillRect(0, 0, s, s);
@@ -710,7 +712,7 @@ export function buildArena(THREE, scene) {
     }
   }, 3, 3);
   const roofTexture = canvasTexture(
-    256,
+    512,
     (ctx, s) => {
       const ground = ctx.createLinearGradient(0, 0, 0, s);
       ground.addColorStop(0, "#9b5639");
@@ -802,7 +804,7 @@ export function buildArena(THREE, scene) {
   );
 
   const limestone = new THREE.MeshStandardMaterial({
-    color: 0xd8c9a6,
+    color: 0xead9ba,
     map: stoneTexture,
     normalMap: stoneNormal,
     normalScale: new THREE.Vector2(0.72, 0.72),
@@ -811,7 +813,7 @@ export function buildArena(THREE, scene) {
     metalness: 0.02,
   });
   const paleStone = new THREE.MeshStandardMaterial({
-    color: 0xe5d5b3,
+    color: 0xf3e5cc,
     map: stoneTexture,
     normalMap: stoneNormal,
     normalScale: new THREE.Vector2(0.54, 0.54),
@@ -819,13 +821,14 @@ export function buildArena(THREE, scene) {
     roughness: 0.92,
   });
   const oldStone = new THREE.MeshStandardMaterial({
-    color: 0xb8aa90,
+    color: 0xccbd9f,
     map: stoneTexture,
     normalMap: stoneNormal,
     normalScale: new THREE.Vector2(0.9, 0.9),
     roughnessMap: stoneRough,
     roughness: 1,
   });
+  const dressedStone = new THREE.MeshStandardMaterial({color:0xdad0b9, map:plasterTexture, normalMap:plasterNormal, normalScale:new THREE.Vector2(.16,.16), roughness: .94});
   const cobbles = new THREE.MeshStandardMaterial({
     color: 0x9a8d72,
     map: cobbleTexture,
@@ -835,19 +838,21 @@ export function buildArena(THREE, scene) {
     roughness: 1,
   });
   const timber = new THREE.MeshStandardMaterial({
-    color: 0xb58e66,
+    color: 0xd3bf9e,
     map: woodTexture,
     bumpMap: woodTexture,
     bumpScale: 0.035,
     roughness: 0.88,
   });
   const darkTimber = new THREE.MeshStandardMaterial({
-    color: 0x6f4b30,
+    color: 0xa08866,
     map: woodTexture,
     bumpMap: woodTexture,
     bumpScale: 0.042,
     roughness: 0.94,
   });
+  woodTexture.repeat.set(1, 1);
+  timber.userData.worldTextureScale = darkTimber.userData.worldTextureScale = 2;
   const shutterMaterials = [0x315b5a, 0x6e3827].map(
     (color) => new THREE.MeshStandardMaterial({
       color,
@@ -865,10 +870,10 @@ export function buildArena(THREE, scene) {
     roughness: 0.88,
   });
   const plasterMaterials = [
-    new THREE.MeshStandardMaterial({ color: 0xcdbb92, map: plasterTexture, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.45, 0.45), roughnessMap: plasterRough, roughness: 1 }),
-    new THREE.MeshStandardMaterial({ color: 0xae9871, map: plasterTexture, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.55, 0.55), roughnessMap: plasterRough, roughness: 1 }),
-    new THREE.MeshStandardMaterial({ color: 0xdbc89d, map: plasterTexture, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.4, 0.4), roughnessMap: plasterRough, roughness: 1 }),
-    new THREE.MeshStandardMaterial({ color: 0x9e815e, map: plasterTexture, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.6, 0.6), roughnessMap: plasterRough, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0xe0d6ba, map: plasterTexture, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.45, 0.45), roughnessMap: plasterRough, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0xcab89a, map: plasterTexture, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.55, 0.55), roughnessMap: plasterRough, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0xf0e7ce, map: plasterTexture, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.4, 0.4), roughnessMap: plasterRough, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0xc4a886, map: plasterTexture, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.6, 0.6), roughnessMap: plasterRough, roughness: 1 }),
   ];
   const packedEarth = new THREE.MeshStandardMaterial({
     color: 0x776047,
@@ -888,7 +893,7 @@ export function buildArena(THREE, scene) {
   });
   [limestone, paleStone, oldStone, cobbles, packedEarth, sandyEarth, ...plasterMaterials].forEach(
     (material) => {
-      material.userData.worldTextureScale = material === cobbles || material === packedEarth ? 2.4 : 2;
+      material.userData.worldTextureScale = material === cobbles || material === packedEarth ? 2.4 : 4;
     },
   );
   const darkRecess = new THREE.MeshStandardMaterial({ color: 0x151410, roughness: 1 });
@@ -1054,13 +1059,16 @@ export function buildArena(THREE, scene) {
     collider = false,
   }) => {
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius, radius * 1.06, height, segments),
+      new THREE.CylinderGeometry(radius, radius * 1.06, height, Math.max(segments, 32)),
       material,
     );
     mesh.position.set(...position);
     mesh.castShadow = mesh.receiveShadow = true;
     mesh.name = name;
     parent.add(mesh);
+    const uv = mesh.geometry.attributes.uv;
+    const scale = material.userData.worldTextureScale;
+    if (scale) for (let i=0;i<uv.count;i++) uv.setXY(i,uv.getX(i)*2*Math.PI*radius/scale,uv.getY(i)*height/scale);
     // A near-diameter footprint prevents the player capsule from clipping
     // through the visible outer masonry of towers, apses, and columns.
     if (collider) addCollider([radius * 1.9, height, radius * 1.9], position);
@@ -1077,8 +1085,8 @@ export function buildArena(THREE, scene) {
     name = "Stone arch",
   }) => {
     const arch = new THREE.Mesh(
-      new THREE.TorusGeometry(radius, thickness, 8, 28, Math.PI),
-      material,
+      voussoirArch(radius, thickness),
+      material === paleStone ? dressedStone : material,
     );
     arch.position.set(...position);
     arch.rotation.y = rotationY;
@@ -2020,6 +2028,7 @@ export function buildArena(THREE, scene) {
       name: "Stone foundation course",
     });
 
+    decorateHouse(house, {x,z,w,d,h}, dressedStone, darkTimber);
     const detailCode = Math.abs(Math.round(x * 41 + z * 67 + h * 29));
     const detailVariant = (detailCode % 997) / 997;
     const roofRise = Math.min(2.4, d * 0.24);
@@ -2840,7 +2849,8 @@ export function buildArena(THREE, scene) {
     );
   }
 
-  // Cathedral and Byzantine-layered chapel: reused column drums and a low dome.
+  // Conjectural Romanesque cathedral elevation. Earlier material survives as
+  // reused columns, not a claimed Byzantine dome over a Frankish cathedral.
   const cathedral = new THREE.Group();
   cathedral.name = "Cathedral of the Holy Cross";
   root.add(cathedral);
@@ -2897,13 +2907,27 @@ export function buildArena(THREE, scene) {
   for (const x of [-27, -13]) {
     addCylinder({ radius: 0.65, height: 5.2, position: [x, 2.6, 13], material: oldStone, segments: 12, parent: cathedral, name: "Reused Byzantine column", collider: true });
   }
-  const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(5.2, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+  const apseRoof = new THREE.Mesh(
+    new THREE.ConeGeometry(5.8, 2.5, 32),
     roofMaterial,
   );
-  dome.position.set(-20, 9, 10);
-  dome.castShadow = true;
-  cathedral.add(dome);
+  apseRoof.position.set(-20, 10.15, 10);
+  apseRoof.scale.z = .65;
+  apseRoof.name = "Interpreted apsidal roof, not a surviving elevation";
+  apseRoof.castShadow = true;
+  cathedral.add(apseRoof);
+  const lancet = new THREE.Shape();
+  lancet.moveTo(-.47,0);lancet.lineTo(.47,0);lancet.lineTo(.47,1.65);
+  lancet.quadraticCurveTo(.45,2.15,0,2.52);
+  lancet.quadraticCurveTo(-.45,2.15,-.47,1.65);lancet.closePath();
+  const lancetGeometry=new THREE.ShapeGeometry(lancet,16);
+  for(const side of [-1,1]) for(const z of [-12,-1,8]) {
+    const bay=new THREE.Group();bay.position.set(-20+side*11.03,4.9,z);
+    bay.rotation.y=side*Math.PI/2;cathedral.add(bay);
+    const reveal=new THREE.Mesh(lancetGeometry,darkRecess);bay.add(reveal);
+    for(const edge of [-1,1]) addBox({size:[.18,1.9,.27],position:[edge*.55,.9,.04],material:dressedStone,parent:bay,name:"Dressed lancet reveal"});
+    addArch({radius:.48,thickness:.13,position:[0,1.78,.04],parent:bay,material:dressedStone,name:"Arched clerestory dressing"});
+  }
 
   // Dense but navigable merchant quarters and vaulted market lanes.
   [
@@ -3649,55 +3673,11 @@ export function buildArena(THREE, scene) {
   addHarbourCrane(46, 52, 0);
   addHarbourCrane(84, 44, Math.PI / 2);
 
-  function createHullGeometry(length = 8, width = 3.5, depth = 1.25) {
-    const l = length / 2;
-    const w = width / 2;
-    const sections = [
-      [-1, 0, 0.18, 0.42],
-      [-0.72, 0.68, 0.07, 0.7],
-      [-0.24, 0.98, 0, 1],
-      [0.34, 1, 0, 0.94],
-      [0.78, 0.82, 0.08, 0.62],
-      [1, 0.32, 0.16, 0.28],
-    ];
-    const positions = [];
-    const uvs = [];
-    for (let index = 0; index < sections.length; index += 1) {
-      const [zFactor, widthFactor, sheer, keelFactor] = sections[index];
-      const v = index / (sections.length - 1);
-      positions.push(
-        -w * widthFactor, sheer, zFactor * l,
-        w * widthFactor, sheer, zFactor * l,
-        0, -depth * keelFactor, zFactor * l,
-      );
-      uvs.push(0, v, 1, v, 0.5, v);
-    }
-    const indices = [];
-    for (let index = 0; index < sections.length - 1; index += 1) {
-      const current = index * 3;
-      const next = current + 3;
-      indices.push(
-        current, current + 2, next,
-        next, current + 2, next + 2,
-        current + 1, next + 1, current + 2,
-        next + 1, next + 2, current + 2,
-      );
-    }
-    indices.push(0, 1, 2);
-    const stern = (sections.length - 1) * 3;
-    indices.push(stern, stern + 2, stern + 1);
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(positions, 3),
-    );
-    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-    return geometry;
+  function createHullGeometry(length, width, depth) {
+    return merchantHull(length, width, depth);
   }
 
-  const createLateenSailGeometry = (subdivisions = 7) => {
+  const createLateenSailGeometry = (subdivisions = 24) => {
     const a = new THREE.Vector3(-2.2, 2.6, 0);
     const b = new THREE.Vector3(2.2, 1.15, 0);
     const c = new THREE.Vector3(-1.65, -2.5, 0);
@@ -3712,7 +3692,7 @@ export function buildArena(THREE, scene) {
           .multiplyScalar(1 - u - v)
           .addScaledVector(b, u)
           .addScaledVector(c, v);
-        point.z = Math.sin(Math.PI * u) * Math.sin(Math.PI * v) * 0.22;
+        point.z = Math.sin(Math.PI * u) * Math.sin(Math.PI * v) * 0.52 + Math.sin(v * 40) * Math.sin(Math.PI * u) * .012;
         indexOf.set(`${i},${j}`, positions.length / 3);
         positions.push(point.x, point.y, point.z);
         uvs.push(u, 1 - v);
@@ -3759,6 +3739,7 @@ export function buildArena(THREE, scene) {
   );
 
   const merchantTimberGeometry = mergeVesselParts([
+    { geometry: vesselDetailParts() },
     {
       geometry: createHullGeometry(),
       position: [0, 0.52, 0],
@@ -3769,8 +3750,8 @@ export function buildArena(THREE, scene) {
     },
     {
       geometry: new THREE.CylinderGeometry(0.07, 0.09, 5, 8),
-      position: [0, 5.7, 0],
-      rotation: [0, 0, Math.PI / 2 - 0.32],
+      position: [0, 6.22, 0],
+      rotation: [0, Math.PI / 2, Math.PI / 2 - 0.32],
     },
     ...[-1, 1].map((side) => ({
       geometry: new THREE.BoxGeometry(0.12, 0.17, 5.9),
@@ -3829,11 +3810,6 @@ export function buildArena(THREE, scene) {
       rotation: [1.04, 0, 0.16],
     },
   ]);
-  const riggingMaterial = new THREE.LineBasicMaterial({
-    color: 0x34261a,
-    transparent: true,
-    opacity: 0.82,
-  });
   const merchantSailGeometry = createLateenSailGeometry();
   const merchantRiggingGeometry = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, 7.8, 0),
@@ -3848,12 +3824,21 @@ export function buildArena(THREE, scene) {
     new THREE.Vector3(0, 0.7, -3.82),
     new THREE.Vector3(0, 7.8, 0),
     new THREE.Vector3(0, 0.7, 3.72),
-    new THREE.Vector3(-2.34, 6.48, 0),
+    new THREE.Vector3(0, 6.95, 2.2),
     new THREE.Vector3(0, 0.78, -3.45),
-    new THREE.Vector3(2.34, 4.92, 0),
+    new THREE.Vector3(0, 5.5, -2.2),
     new THREE.Vector3(0, 0.78, 3.38),
   ]);
 
+  const riggingPoints = merchantRiggingGeometry.attributes.position;
+  const ropeParts=[];
+  for(let i=0;i<riggingPoints.count;i+=2) {
+    const a=new THREE.Vector3().fromBufferAttribute(riggingPoints,i), b=new THREE.Vector3().fromBufferAttribute(riggingPoints,i+1);
+    ropeParts.push({geometry:new THREE.TubeGeometry(new THREE.LineCurve3(a,b),1,.016,5,false)});
+  }
+  const riggingRopes=combine(ropeParts);
+  ropeParts.forEach(p=>p.geometry.dispose());
+  merchantRiggingGeometry.dispose();
   const addBoat = (x, z, scale = 1, rotation = 0) => {
     const boat = new THREE.Group();
     boat.position.set(x, 0.15, z);
@@ -3871,10 +3856,11 @@ export function buildArena(THREE, scene) {
     boat.add(deck);
     const canvas = new THREE.Mesh(merchantSailGeometry, sail);
     canvas.position.set(0, 4.35, 0);
+    canvas.rotation.y = Math.PI / 2;
     canvas.castShadow = true;
     canvas.name = "Billowed stitched lateen sail";
     boat.add(canvas);
-    const rigging = new THREE.LineSegments(merchantRiggingGeometry, riggingMaterial);
+    const rigging = new THREE.Mesh(riggingRopes, ropeMaterial);
     rigging.name = "Standing and running rigging";
     boat.add(rigging);
     boat.userData.animate = (time) => {
@@ -3885,7 +3871,7 @@ export function buildArena(THREE, scene) {
     return boat;
   };
   const merchantBoats = [
-    addBoat(70, 64, 1.2, 0.08),
+    addBoat(70, 64, 1.85, 0.08),
     addBoat(79, 48, 0.72, Math.PI / 2),
     addBoat(57, 73, 0.58, -0.25),
     addBoat(54, 55, 0.7, 0.42),
@@ -3935,6 +3921,8 @@ export function buildArena(THREE, scene) {
     bumpScale: 0.022,
     roughness: 0.96,
   });
+  const glazedPottery = new THREE.MeshStandardMaterial({color:0xe1c787, map:sgraffitoTexture(), roughness:.28, metalness:0});
+  const eatingBowlClay = new THREE.MeshStandardMaterial({color:0xc8a888, map:potteryTexture, roughness:.9});
   const amphoraGeometry = new THREE.LatheGeometry(
     [
       new THREE.Vector2(0.03, -0.76),
@@ -3948,7 +3936,7 @@ export function buildArena(THREE, scene) {
       new THREE.Vector2(0.13, 0.66),
       new THREE.Vector2(0.19, 0.7),
     ],
-    12,
+    32,
   );
   const amphoraHandleGeometries = [-1, 1].map((side) => (
     new THREE.TubeGeometry(
@@ -3963,14 +3951,14 @@ export function buildArena(THREE, scene) {
         false,
         "centripetal",
       ),
-      5,
+      14,
       0.028,
-      3,
+      6,
       false,
     )
   ));
-  const amphoraRimGeometry = new THREE.TorusGeometry(0.19, 0.028, 4, 10);
-  const amphoraOpeningGeometry = new THREE.CircleGeometry(0.15, 10);
+  const amphoraRimGeometry = new THREE.TorusGeometry(0.19, 0.028, 8, 32);
+  const amphoraOpeningGeometry = new THREE.CircleGeometry(0.15, 32);
   const addAmphora = ({
     x,
     y,
@@ -4303,6 +4291,7 @@ export function buildArena(THREE, scene) {
     [33, 47, 1.1, 0.05], [36, 58, 0.85, -0.1], [44, 60, 0.75, 0.3],
   ].forEach(([x, z, scale, rotation], index) => {
     const crate = addTradeCrate(x, z, scale, rotation);
+    if ([2,4,5].includes(index)) potteryDisplay(crate, eatingBowlClay, glazedPottery);
     if (index === 0 || index === 3) {
       registerMovableProp(crate, {
         kind: "tradeCrates",
@@ -4325,11 +4314,11 @@ export function buildArena(THREE, scene) {
       new THREE.Vector2(0.44, 0.53),
       new THREE.Vector2(0.39, 0.62),
     ],
-    14,
+    32,
   );
-  const barrelLidGeometry = new THREE.CylinderGeometry(0.39, 0.39, 0.05, 14);
-  const barrelHoopGeometry = new THREE.TorusGeometry(0.485, 0.032, 4, 12);
-  const barrelBellyHoopGeometry = new THREE.TorusGeometry(0.52, 0.032, 4, 12);
+  const barrelLidGeometry = new THREE.CylinderGeometry(0.39, 0.39, 0.05, 32);
+  const barrelHoopGeometry = new THREE.TorusGeometry(0.485, 0.032, 6, 32);
+  const barrelBellyHoopGeometry = new THREE.TorusGeometry(0.52, 0.032, 6, 32);
   const barrelSeamGeometry = new THREE.TubeGeometry(
     new THREE.CatmullRomCurve3([
       new THREE.Vector3(0.395, -0.6, 0),
@@ -4407,7 +4396,7 @@ export function buildArena(THREE, scene) {
     new THREE.MeshStandardMaterial({ color: 0x60713a, roughness: 0.98 }),
     new THREE.MeshStandardMaterial({ color: 0x974231, roughness: 0.96 }),
   ];
-  const produceGeometry = new THREE.DodecahedronGeometry(0.14, 0);
+  const produceGeometry = new THREE.SphereGeometry(0.14, 16, 12).toNonIndexed();
   const producePositions = produceGeometry.attributes.position;
   for (let index = 0; index < producePositions.count; index += 1) {
     const x = producePositions.getX(index);
@@ -5748,6 +5737,7 @@ export function buildArena(THREE, scene) {
       addBox({size:[.68,1.1,.08],position:[x+side*w*.29,h*.7,z+d/2+.06],material:darkTimber,parent:group,shadows:false});
     }
     addBox({size:[1.15,2.1,.12],position:[x,1.05,z+d/2+.05],material:timber,parent:group,shadows:false});
+    decorateHouse(group,{x,z,w,d,h},dressedStone,darkTimber);
     infillCount++;
   }
 
@@ -5860,5 +5850,7 @@ export function buildArena(THREE, scene) {
     vesselRenderBudget,
     objectRenderBudget,
     infillCount,
+    surfaceTextures: [stoneTexture,stoneNormal,cobbleTexture,cobbleNormal,plasterTexture,plasterNormal],
+    textureResolution: highDetailTextures ? 2048 : 1024,
   };
 }

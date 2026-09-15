@@ -10,7 +10,9 @@
     "test:arena": "node scripts/arena-smoke.mjs",
     "test:time": "node scripts/day-cycle-smoke.mjs",
     "test:time-browser": "node scripts/day-cycle-browser.mjs",
-    "test:browser": "node scripts/browser-smoke.mjs"
+    "test:browser": "node scripts/browser-smoke.mjs",
+    "test:visual": "node scripts/visual-smoke.mjs",
+    "test:visual-browser": "node scripts/visual-browser.mjs"
   },
   "dependencies": {
     "three": "^0.179.1"

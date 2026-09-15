@@ -38,7 +38,12 @@ browser stealth experience realistic for this repository and execution window.
 
 - Use Vite, JavaScript modules, and Three.js.
 - Keep source modular and readable. Use no remote runtime assets or APIs.
-- Generate any textures and sound effects locally/procedurally.
+- Generate original procedural textures and sound effects. Bundled CC0 scanned
+  surfaces may supplement them; document their sources and never require a
+  third-party runtime asset service.
+- Preserve the higher-detail architecture, cloth/mail, period-informed people,
+  rounded ship hulls and fore-and-aft lateen rigs. Desktop surfaces use 2K maps;
+  compact devices use 1K. Keep historical evidence separate from conjecture.
 - The production build must pass without warnings that indicate broken code.
 - Handle pointer-lock loss, resize, muted audio, and browsers where Web Audio
   is unavailable.

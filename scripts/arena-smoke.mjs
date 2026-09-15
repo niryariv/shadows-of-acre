@@ -107,7 +107,9 @@ try {
   if (!budget || budget.staticBatches <= 0 || budget.staticTriangles <= 0) {
     throw new Error("Static city batching did not produce a valid render budget");
   }
-  if (budget.staticBatches > 40) {
+  // Detailed masonry and tablewares share materials: bounded draws despite
+  // the intentional increase in curved geometry and stone construction.
+  if (budget.staticBatches > 48) {
     throw new Error(`Static draw-call budget regressed: ${budget.staticBatches} batches`);
   }
   if (budget.sourceStaticMeshes > 4200) {
@@ -115,7 +117,7 @@ try {
       `Static source-mesh budget regressed: ${budget.sourceStaticMeshes} meshes`,
     );
   }
-  if (budget.staticTriangles > 110000) {
+  if (budget.staticTriangles > 285000) {
     throw new Error(`Static triangle budget regressed: ${budget.staticTriangles} triangles`);
   }
   if (!arena.colliders.length || !arena.entryRoutes.length || !arena.zones.length) {
@@ -169,7 +171,7 @@ try {
       `Entry-prop construction regressed: ${JSON.stringify(objectBudget?.entryProps)}`,
     );
   }
-  if (objectBudget.entryProps.renderedTriangles > 2250) {
+  if (objectBudget.entryProps.renderedTriangles > 7100) {
     throw new Error(
       `Entry-prop triangle budget regressed: ${objectBudget.entryProps.renderedTriangles}`,
     );
@@ -293,7 +295,7 @@ try {
     );
   }
   if (
-    objectBudget.marketGoods.produceTriangles > 1568 ||
+    objectBudget.marketGoods.produceTriangles > 10500 ||
     objectBudget.marketGoods.sugarTriangles > 376
   ) {
     throw new Error(
@@ -328,7 +330,7 @@ try {
       `Amphora construction regressed: ${JSON.stringify(objectBudget?.amphorae)}`,
     );
   }
-  if (objectBudget.amphorae.staticTriangles > 10980) {
+  if (objectBudget.amphorae.staticTriangles > 44000) {
     throw new Error(
       `Amphora triangle budget regressed: ${objectBudget.amphorae.staticTriangles}`,
     );
@@ -353,7 +355,7 @@ try {
   }
   if (
     objectBudget.shutters.materialVariants !== 2 ||
-    objectBudget.shutters.textureSize !== 128 ||
+    objectBudget.shutters.textureSize !== 512 ||
     objectBudget.shutters.frontLeaves !== 170 ||
     objectBudget.shutters.sideLeaves !== 304
   ) {
@@ -590,7 +592,7 @@ try {
       `Barrel construction regressed: ${JSON.stringify(objectBudget.barrels)}`,
     );
   }
-  if (objectBudget.barrels.staticTriangles > 3920) {
+  if (objectBudget.barrels.staticTriangles > 10200) {
     throw new Error(
       `Barrel triangle budget regressed: ${objectBudget.barrels.staticTriangles}`,
     );

@@ -13,6 +13,8 @@ major districts, and compresses real distances to keep a stealth run readable.
 
 - Acre occupies a peninsula beside a natural bay, with the harbour on its
   south-eastern side and the open Mediterranean to the west and south.
+  Land continues beyond the north and east defenses onto the coastal plain;
+  the game terrain and map now use this same distinction.
 - The thirteenth-century expansion into Montmusard extended the city north of
   its earlier wall. Its asymmetric defenses run farther north along the western
   shore than on the eastern side. The new quarter gained double land defenses,
@@ -67,6 +69,36 @@ documented parts of Acre's economy and infrastructure into stealth choices:
 These installations are compressed and representative: their exact positions
 within the game's streets are level-design decisions, while their materials,
 uses, and neighborhood associations come from the sources below.
+
+## Interpretation and play
+
+The date is approximately 1250, before the War of Saint Sabas (1256–1258) and
+the siege of 1291. The city is inhabited and trading, not already reduced to
+the ruins of the final siege. The archaeological evidence for the Genoese
+quarter includes a defended gateway and covered street, but it does not provide
+a complete measured plan of every lane at this date. See the IAA's
+[2017 Genoese-quarter report](https://hadashot.iaa.org.il/Report_Detail_Eng.aspx?id=25261&mag_id=125)
+and [Montmusard excavation](https://hadashot.iaa.org.il/report_detail_eng.aspx?id=1561).
+
+Buildings, roof forms, ward boundaries and the detailed placement of gateways
+are interpretive. The playable plan compresses distances and simplifies
+architecture. Residential infill suggests lime-plastered dwellings and flat
+roofs without claiming an excavation record for those individual houses.
+The cathedral elevation and decorative dome are particularly conjectural.
+
+The eight exploration stops label their evidence explicitly. An excavated
+complex does not imply that all of its rendered upper floors survive. The map
+shows actual playable obstacles and routes, so its symbolic drawings are not
+additional archaeological claims. The dispatch, guards' postings, uniform
+colors of secular soldiers, ropes and breach entrances are fictional gameplay
+devices. Templar white mantles identify knight brothers, not every member of
+the order; sergeants wore darker clothing. Historical orders remain distinct
+from the secular city watch.
+
+Holding the map pauses play in both modes. Brightness is a display preference
+and does not change the guards' visibility calculations. Sound is muffled by
+stone; the simulated hearing ranges are chosen for playable stealth, not a
+claim about medieval acoustics.
 
 ## Primary research anchors
 

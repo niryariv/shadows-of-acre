@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify collision and playable routes
+        run: npm run test:arena
+
       - name: Build for GitHub Pages
         run: npm run build
         env:

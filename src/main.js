@@ -8,16 +8,21 @@ import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { buildArena, mergeGeometries } from "./arena.js";
 import { StealthAudio } from "./audio.js";
-import { ACRE_PLAN, planBounds, pointInPolygon } from "./acre-plan.js";
+import { createNavigator, routeLength } from "./navigation.js";
+import { createCartographer } from "./cartography.js";
+import { HISTORIC_STOPS, SETTING_NOTE } from "./history.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("game");
 const mapCanvas = $("map-canvas");
-const mapContext = mapCanvas.getContext("2d");
-const mapParchment = new Image();
-const mapParchmentUrl = `${import.meta.env.BASE_URL}assets/maps/acre-portolan-parchment.webp`;
-const mapStaticCanvas = document.createElement("canvas");
-let mapStaticKey = "";
+const drawMap = createCartographer(mapCanvas);
+const settings = { brightness: 1.08, sensitivity: 1, reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches };
+try {
+  const saved = JSON.parse(localStorage.getItem("acre-settings") || "null");
+  if (Number.isFinite(saved?.brightness)) settings.brightness = Math.max(.8, Math.min(1.5, saved.brightness));
+  if (Number.isFinite(saved?.sensitivity)) settings.sensitivity = Math.max(.4, Math.min(2, saved.sensitivity));
+  if (typeof saved?.reducedMotion === "boolean") settings.reducedMotion = saved.reducedMotion;
+} catch { /* Storage may be unavailable in a private or embedded session. */ }
 const devFastInteractions =
   import.meta.env.DEV && new URLSearchParams(location.search).has("qa-fast");
 const devAutoWalk =
@@ -34,9 +39,6 @@ const devCoverTestId =
   import.meta.env.DEV && new URLSearchParams(location.search).get("qa-cover");
 const waterSurfaceY = 0.02;
 const waterFloorY = -1.54;
-mapParchment.addEventListener("load", () => {
-  mapStaticKey = "";
-});
 const compactDevice = innerWidth <= 820 || matchMedia("(pointer: coarse)").matches;
 const renderQuality = {
   minPixelRatio: compactDevice ? 0.72 : 0.82,
@@ -60,7 +62,7 @@ renderer.shadowMap.needsUpdate = true;
 renderer.info.autoReset = false;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.88;
+renderer.toneMappingExposure = settings.brightness;
 
 const scene = new THREE.Scene();
 const surfaceBackgroundColor = new THREE.Color(0x030815);
@@ -273,6 +275,10 @@ scene.add(moonLight);
 let shadowUpdateElapsed = Infinity;
 
 const arena = buildArena(THREE, scene);
+const surfaceNavigation = createNavigator({ colliders: arena.colliders, bounds: arena.bounds, isGround: arena.isDryLand });
+const tunnelNavigation = createNavigator({ colliders: arena.colliders,
+  bounds: { min: {x:-58,z:47}, max: {x:39,z:53} }, floorY: arena.tunnel.floorY, step: .6 });
+const guidance = { path: null, goal: null, label: "", nextUpdate: 0, key: "" };
 arena.pickups.forEach((pickup) => {
   pickup.active = false;
   pickup.mesh.visible = false;
@@ -355,6 +361,8 @@ const game = {
   explorationAlerts: 0,
   alarmCooldown: 0,
   insertionUntil: Infinity,
+  tourIndex: -1,
+  tourDiscovered: new Set(),
 };
 
 const player = {
@@ -374,6 +382,7 @@ const player = {
   noise: 0,
   bob: 0,
   roll: 0,
+  stepDistance: 0,
 };
 const worldNoiseEvents = [];
 arena.movableProps.forEach((prop) => {
@@ -408,6 +417,7 @@ camera.rotation.set(player.pitch, player.yaw, 0);
 if (import.meta.env.DEV) {
   globalThis.__acreDebug = {
     teleport(x, z, yaw = player.yaw, floorY = 0, pitch = player.pitch) {
+      guidance.nextUpdate = 0;
       player.floorY = floorY;
       player.position.set(x, floorY + player.height, z);
       player.velocity.set(0, 0, 0);
@@ -442,6 +452,9 @@ if (import.meta.env.DEV) {
         enteredCity: game.enteredCity,
         stage: game.stage,
         player: player.position.toArray(),
+        inTunnel: game.inTunnel,
+        detection: game.detection,
+        guidance: { label: guidance.label, path: guidance.path, goal: guidance.goal },
         wallGuards: guards
           .filter((guard) => guard.wallPatrol)
           .map((guard) => ({
@@ -487,6 +500,9 @@ if (import.meta.env.DEV) {
           index: guard.index,
           order: guard.order.id,
           position: guard.root.position.toArray(),
+          yaw: guard.root.rotation.y,
+          state: guard.state,
+          awareness: guard.awareness,
         })),
       };
     },
@@ -1026,6 +1042,11 @@ function createGuard(index, position, options = {}) {
     target: root.position.clone(),
     lastSeen: root.position.clone(),
     awareness: 0,
+    searchUntil: 0,
+    navigationUntil: 0,
+    path: null,
+    patrolIndex: index,
+    pauseUntil: 0,
     state: "patrol",
     phase: Math.random() * Math.PI * 2,
     speed: 1.25 + Math.random() * 0.18,
@@ -1388,13 +1409,16 @@ function updateMoonExposure(dt) {
 
 function boxCollides(position) {
   const minY = position.y - player.height;
+  // Surface masonry has submerged foundations: diving must not let the
+  // swimmer pass beneath a wall whose visible mesh begins at ground level.
+  const topY = player.inWater && !game.inTunnel ? Math.max(position.y, 0.25) : position.y;
   for (const box of arena.colliders) {
     if (
       position.x + player.radius > box.min.x &&
       position.x - player.radius < box.max.x &&
       position.z + player.radius > box.min.z &&
       position.z - player.radius < box.max.z &&
-      position.y > box.min.y &&
+      topY > box.min.y &&
       minY < box.max.y
     ) {
       return true;
@@ -1404,7 +1428,7 @@ function boxCollides(position) {
 }
 
 function guardBlocked(position) {
-  return arena.colliders.some(
+  return !arena.isDryLand(position.x, position.z) || arena.colliders.some(
     (box) =>
       position.x + 0.42 > box.min.x &&
       position.x - 0.42 < box.max.x &&
@@ -1441,6 +1465,8 @@ function movePlayerWithCollisions(deltaX, deltaZ) {
       player.velocity.z = 0;
     }
   }
+  player.position.x = THREE.MathUtils.clamp(player.position.x, arena.bounds.min.x + player.radius, arena.bounds.max.x - player.radius);
+  player.position.z = THREE.MathUtils.clamp(player.position.z, arena.bounds.min.z + player.radius, arena.bounds.max.z - player.radius);
 }
 
 const propCollisionDirection = new THREE.Vector3();
@@ -1580,6 +1606,10 @@ function updateMovableProps(dt, playerSpeed) {
 }
 
 function updatePlayer(dt) {
+  if (!game.inTunnel && game.enteredCity) {
+    player.inWater = !arena.isDryLand(player.position.x, player.position.z);
+    player.floorY = player.inWater ? waterFloorY : 0;
+  }
   const crouchRequested =
     mouseButtons.has(2) ||
     keys.has("ControlLeft") ||
@@ -1637,7 +1667,7 @@ function updatePlayer(dt) {
   const moving = move.lengthSq() > 0;
   if (moving) move.normalize();
 
-  const sprintHeld = mouseButtons.has(0) || keys.has("ShiftLeft");
+  const sprintHeld = mouseButtons.has(0) || keys.has("ShiftLeft") || keys.has("ShiftRight");
   const sprinting =
     !player.inWater &&
     !player.crouched &&
@@ -1656,6 +1686,7 @@ function updatePlayer(dt) {
   player.velocity.x = THREE.MathUtils.damp(player.velocity.x, move.x * speed, 13, dt);
   player.velocity.z = THREE.MathUtils.damp(player.velocity.z, move.z * speed, 13, dt);
 
+  const previousX = player.position.x, previousZ = player.position.z;
   movePlayerWithCollisions(player.velocity.x * dt, player.velocity.z * dt);
 
   const targetHeight = player.crouched ? 1.12 : 1.72;
@@ -1673,7 +1704,7 @@ function updatePlayer(dt) {
         : player.needsBreath
           ? 38
           : 7
-    : !moving
+    : horizontalSpeed < 0.1
       ? 2
       : player.crouched
         ? 12
@@ -1681,16 +1712,20 @@ function updatePlayer(dt) {
           ? 92
           : 34;
   player.noise = THREE.MathUtils.damp(player.noise, targetNoise, 9, dt);
-  if (moving) {
+  const travelled = Math.hypot(player.position.x - previousX, player.position.z - previousZ);
+  if (travelled > 0.0001) {
     player.bob += dt * (player.inWater ? 3.2 : player.crouched ? 5 : sprinting ? 12 : 8);
-    if (Math.sin(player.bob) > 0.965) {
+    player.stepDistance += travelled;
+    const stride = player.inWater ? 1.25 : player.crouched ? 1.0 : 1.65;
+    if (player.stepDistance >= stride) {
+      player.stepDistance %= stride;
       if (player.inWater) audio.splash(player.submerged ? 0.18 : 0.32);
       else audio.footstep(sprinting ? 1.1 : player.crouched ? 0.25 : 0.55);
     }
   }
   updateMovableProps(dt, horizontalSpeed);
 
-  const bobScale = player.inWater ? 0.18 : player.crouched ? 0.25 : sprinting ? 1.1 : 0.55;
+  const bobScale = settings.reducedMotion ? 0 : player.inWater ? 0.18 : player.crouched ? 0.25 : sprinting ? 1.1 : 0.55;
   const bobX = Math.sin(player.bob) * 0.011 * bobScale;
   const bobY = Math.abs(Math.cos(player.bob)) * 0.015 * bobScale;
   player.roll = THREE.MathUtils.damp(player.roll, move.x * -0.007, 8, dt);
@@ -1698,8 +1733,8 @@ function updatePlayer(dt) {
   camera.position.copy(player.position);
   camera.position.x += bobX;
   camera.position.y -= bobY;
-  camera.rotation.set(player.pitch, player.yaw, player.roll);
-  camera.fov = THREE.MathUtils.damp(camera.fov, sprinting ? 76 : 72, 9, dt);
+  camera.rotation.set(player.pitch, player.yaw, settings.reducedMotion ? 0 : player.roll);
+  camera.fov = THREE.MathUtils.damp(camera.fov, sprinting && !settings.reducedMotion ? 76 : 72, 9, dt);
   camera.updateProjectionMatrix();
 }
 
@@ -1771,7 +1806,8 @@ function updateGuards(dt) {
         sightRange * moonVisibility,
         66,
       );
-    const hearingRadius = 2.2 + player.noise * 0.115;
+    const ear = guard.root.position.clone().add(new THREE.Vector3(0, 1.55, 0));
+    const hearingRadius = (2.2 + player.noise * 0.115) * (clearLineOfSight(ear, player.position) ? 1 : .28);
     const hearsPlayer =
       !player.submerged &&
       !devGuardAudioTest &&
@@ -1782,7 +1818,7 @@ function updateGuards(dt) {
     if (!devGuardAudioTest) {
       for (const event of worldNoiseEvents) {
         const eventDistance = guard.root.position.distanceTo(event.position);
-        const eventRadius = 2.2 + event.strength * 0.115;
+        const eventRadius = (2.2 + event.strength * 0.115) * (clearLineOfSight(ear, event.position) ? 1 : .32);
         const score = event.strength - eventDistance * 4;
         if (eventDistance < eventRadius && score > heardWorldNoiseScore) {
           heardWorldNoise = event;
@@ -1792,6 +1828,7 @@ function updateGuards(dt) {
     }
 
     if (seesPlayer) {
+      guard.searchUntil = game.elapsed + 5;
       guard.lastSeen.copy(player.position);
       const proximity = THREE.MathUtils.clamp(1.35 - distance / 22, 0.5, 1.2);
       const posture = player.inWater
@@ -1807,10 +1844,13 @@ function updateGuards(dt) {
     } else {
       guard.awareness = Math.max(0, guard.awareness - dt * 18);
       if (heardWorldNoise || hearsPlayer) {
+        guard.searchUntil = game.elapsed + 4.5;
         const soundPosition = heardWorldNoise?.position || player.position;
         const soundStrength = heardWorldNoise?.strength || player.noise;
         guard.lastSeen.copy(soundPosition);
         guard.awareness = Math.max(guard.awareness, soundStrength > 65 ? 34 : 18);
+        guard.state = "investigate";
+      } else if (game.elapsed < guard.searchUntil) {
         guard.state = "investigate";
       } else if (guard.awareness <= 1 && guard.state !== "patrol") {
         guard.state = "patrol";
@@ -1854,14 +1894,34 @@ function updateGuards(dt) {
         guard.target.copy(guard.home);
         guard.target[guard.wallPatrol.axis] = guard.wallPatrol.next;
       } else if (!guard.wallPatrol && guard.root.position.distanceTo(guard.target) < 1.1) {
-        guard.target.copy(guard.home).add(
-          new THREE.Vector3((Math.random() - 0.5) * 11, 0, (Math.random() - 0.5) * 11),
-        );
+        guard.pauseUntil = game.elapsed + 1.2;
+        const offsets = [[5,0],[0,5],[-5,0],[0,-5],[3,3],[-3,-3]];
+        for (let i = 0; i < offsets.length; i++) {
+          const [dx,dz] = offsets[(++guard.patrolIndex) % offsets.length];
+          if (surfaceNavigation.walkable(guard.home.x+dx, guard.home.z+dz)) {
+            guard.target.set(guard.home.x+dx, 0, guard.home.z+dz); break;
+          }
+        }
+        guard.navigationUntil = 0;
       }
       desired.copy(guard.target).sub(guard.root.position).setY(0).normalize();
       guard.root.lookAt(guard.target.x, guard.root.position.y, guard.target.z);
     }
 
+    if (!guard.wallPatrol) {
+      const destination = guard.state === "patrol" ? guard.target : guard.lastSeen;
+      if (game.elapsed >= guard.navigationUntil || stateBeforeSense !== guard.state) {
+        guard.path = surfaceNavigation.route(guard.root.position, destination);
+        guard.navigationUntil = game.elapsed + 1.6 + guard.index * .03;
+      }
+      while (guard.path?.length > 1 && Math.hypot(guard.path[1].x-guard.root.position.x, guard.path[1].z-guard.root.position.z) < .65) guard.path.shift();
+      const next = guard.path?.[1];
+      if (next) {
+        desired.set(next.x-guard.root.position.x, 0, next.z-guard.root.position.z).normalize();
+        guard.root.lookAt(next.x, guard.root.position.y, next.z);
+      } else desired.set(0,0,0);
+      if (guard.state === "patrol" && game.elapsed < guard.pauseUntil) desired.set(0,0,0);
+    }
     const old = guard.root.position.clone();
     const guardSpeed = guard.state === "patrol" ? guard.speed : 1.75;
     guard.root.position.addScaledVector(desired, guardSpeed * dt);
@@ -1883,7 +1943,7 @@ function updateGuards(dt) {
       guard.root.rotation.y += Math.PI * 0.35;
     }
 
-    const movement = Math.min(desired.length(), 1);
+    const movement = Math.min(guard.root.position.distanceTo(old) / Math.max(dt, .001), 1);
     const gait = Math.sin(guard.phase * 7.5) * movement;
     guard.detailRoot.position.y =
       Math.abs(gait) * 0.022 + Math.sin(guard.phase * 1.15) * 0.004;
@@ -1918,7 +1978,7 @@ function updateGuards(dt) {
     const footstepIndex = Math.floor((guard.phase * 7.5) / Math.PI);
     if (
       footstepIndex !== guard.lastFootstepIndex &&
-      desired.lengthSq() > 0.2
+      movement > 0.2
     ) {
       guard.lastFootstepIndex = footstepIndex;
       audio.guardFootstep({
@@ -1983,9 +2043,17 @@ function triggerAlarm(reason) {
   return true;
 }
 
+function nearestSeaEntry() {
+  return arena.entryRoutes.filter(route => route.exterior).reduce((nearest, route) => {
+    const distance = item => Math.hypot(player.position.x-item.exterior.x, player.position.z-item.exterior.z);
+    return !nearest || distance(route) < distance(nearest) ? route : nearest;
+  }, null);
+}
+
 function updateSeaWallTraversal(dt, prompt) {
-  const route = game.entryRoute;
-  if (game.enteredCity || !route?.exterior) {
+  // Ropes remain usable if the player returns to the sea later in the mission.
+  const route = nearestSeaEntry();
+  if (game.inTunnel || !route) {
     game.seaWallInteraction = Math.max(0, game.seaWallInteraction - dt * 2.2);
     return false;
   }
@@ -2043,7 +2111,11 @@ function updateSeaWallTraversal(dt, prompt) {
     game.seaWallInteraction = 0;
     game.interaction = 0;
     game.insertionUntil = game.elapsed + 0.7;
-    $("objective").textContent = "INFILTRATE // RECOVER THE SEALED DISPATCH";
+    $("objective").textContent = game.mode === "explore"
+      ? "EXPLORE AT YOUR PACE · N FOR NEXT HISTORIC PLACE"
+      : game.stage === "extract"
+        ? "EXFILTRATE // REACH THE HARBOUR SKIFF"
+        : "INFILTRATE // RECOVER THE SEALED DISPATCH";
     addFeed(`${route.shortName} // CITY BREACHED`);
     audio.pickup();
   }
@@ -2052,6 +2124,7 @@ function updateSeaWallTraversal(dt, prompt) {
 
 function updateTunnelTraversal(dt, prompt) {
   game.tunnelCooldown = Math.max(0, game.tunnelCooldown - dt);
+  if (player.inWater) return false;
   const underground = game.inTunnel;
   const portal = arena.tunnel.portals.find((item) => {
     const point = underground ? item.underground : item.surface;
@@ -2325,40 +2398,28 @@ function updateHUD() {
   $("moon-panel").classList.toggle("exposed", moonExposure > 0.7);
   $("moon-panel").classList.toggle("dappled", moonExposure > 0.3 && moonExposure <= 0.7);
 
-  const degrees = THREE.MathUtils.euclideanModulo(THREE.MathUtils.radToDeg(player.yaw), 360);
+  const degrees = THREE.MathUtils.euclideanModulo(-THREE.MathUtils.radToDeg(player.yaw), 360);
   const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
   const cardinal = directions[Math.round(degrees / 45) % 8];
+  $("compass-left").textContent = directions[(Math.round(degrees / 45) + 6) % 8];
+  $("compass-right").textContent = directions[(Math.round(degrees / 45) + 2) % 8];
   $("bearing").textContent = `${cardinal}  ${String(Math.round(degrees)).padStart(3, "0")}`;
 
-  const waypointTarget =
-    !game.enteredCity && game.entryRoute?.arrival
-      ? game.entryRoute.arrival
-      : game.stage === "infiltrate"
-        ? missionObjects.terminal.position
-        : missionObjects.exfil.position;
-  const waypointDelta = waypointTarget.clone().sub(player.position);
-  const waypointDistance = Math.hypot(waypointDelta.x, waypointDelta.z);
-  const targetBearing = Math.atan2(waypointDelta.x, -waypointDelta.z);
-  const relativeBearing = THREE.MathUtils.radToDeg(targetBearing + player.yaw);
-  $("waypoint-arrow").style.transform = `rotate(${relativeBearing}deg)`;
-  $("waypoint-task").textContent = !game.enteredCity
-    ? `${game.entryRoute.method} // ENTER ACRE`
-    : game.inTunnel
-      ? game.stage === "infiltrate"
-        ? "EXIT TUNNEL // REACH HOSPITALLER COURT"
-        : "FOLLOW TUNNEL EAST // HARBOUR"
-      : game.stage === "infiltrate"
-        ? "ENTER HOSPITALLER COURT"
-        : "REACH HARBOUR SKIFF";
-  $("map-objective").textContent =
-    !game.enteredCity
-      ? `I · ENTER VIA ${game.entryRoute.shortName}`
-      : game.stage === "infiltrate"
-      ? "I · RECOVER THE SEALED DISPATCH"
-      : "II · RETURN UNSEEN TO THE HARBOUR SKIFF";
-  $("waypoint-distance").textContent = `${Math.max(0, Math.round(waypointDistance))} M`;
-  $("waypoint").classList.toggle("close", waypointDistance < 4);
-
+  updateNavigation();
+  const next = guidance.path?.[1] || guidance.goal;
+  const dx = (next?.x ?? player.position.x) - player.position.x;
+  const dz = (next?.z ?? player.position.z) - player.position.z;
+  $("waypoint-arrow").style.transform = `rotate(${THREE.MathUtils.radToDeg(Math.atan2(dx, -dz) + player.yaw)}deg)`;
+  $("waypoint-arrow").style.opacity = guidance.path ? "1" : ".25";
+  $("waypoint-task").textContent = guidance.label;
+  $("waypoint-distance").textContent = guidance.path ? `${Math.round(routeLength(guidance.path))} PACES · VIA LANES` : "CHECK YOUR MAP";
+  $("waypoint").classList.toggle("close", routeLength(guidance.path) < 4);
+  $("map-objective").textContent = guidance.label;
+  $("watch-state").textContent = game.detection > 65 ? "YOU ARE BEING IDENTIFIED · BREAK SIGHT" : game.detection > 35 ? "WATCH IS SEARCHING · FIND COVER" : game.detection > 10 ? "SOMETHING WAS NOTICED" : "NO SIGN OF PURSUIT";
+  $("watch-state").classList.toggle("danger", game.detection > 65);
+  const firstMinute = game.missionTime < 24;
+  $("travel-hint").classList.toggle("hidden", !firstMinute || game.detection > 35);
+  $("travel-hint").textContent = player.inWater ? "Hold RMB to dive. Surface before your breath runs out. At a marked wall, hold E to climb." : "WASD move · RMB crouch · LMB run · Hold M to plan · E at stairs and objects";
   const currentZone = arena.zones.find((zone) => zone.box.containsPoint(player.position));
   $("location").textContent = player.inWater
     ? "MEDITERRANEAN SEA"
@@ -2434,7 +2495,7 @@ function revealGuardOrder(order) {
 function updateGuardOrderGuide() {
   const panel = $("guard-order-panel");
   panel.classList.toggle("pressure", game.detection >= 55);
-  if (game.inTunnel || player.submerged) {
+  if (game.inTunnel || player.submerged || game.detection >= 55) {
     panel.classList.add("hidden");
     return;
   }
@@ -2446,7 +2507,7 @@ function updateGuardOrderGuide() {
   panel.classList.add("hidden");
   activeGuardOrderId = "";
   if (
-    discoveredGuardOrders.size >= Object.keys(guardOrderDefinitions).length
+    game.detection > 25 || activeStreetStoryId || discoveredGuardOrders.size >= Object.keys(guardOrderDefinitions).length
   ) return;
 
   guardOrderEye.copy(player.position);
@@ -2474,583 +2535,53 @@ function updateGuardOrderGuide() {
   if (nearestGuard) revealGuardOrder(nearestGuard.order);
 }
 
-function drawCityMap() {
-  if (!mapParchment.src) mapParchment.src = mapParchmentUrl;
-  const rect = mapCanvas.getBoundingClientRect();
-  if (rect.width < 10 || rect.height < 10) return;
-  const ratio = Math.min(devicePixelRatio, 2);
-  const pixelWidth = Math.round(rect.width * ratio);
-  const pixelHeight = Math.round(rect.height * ratio);
-  if (mapCanvas.width !== pixelWidth || mapCanvas.height !== pixelHeight) {
-    mapCanvas.width = pixelWidth;
-    mapCanvas.height = pixelHeight;
+function updateNavigation() {
+  const key = `${game.stage}:${game.inTunnel}:${game.enteredCity}:${game.tourIndex}:${player.inWater}`;
+  if (key === guidance.key && game.elapsed < guidance.nextUpdate) return;
+  guidance.key = key;
+  guidance.nextUpdate = game.elapsed + .85;
+  const tour = game.mode === "explore" && game.tourIndex >= 0 ? HISTORIC_STOPS[game.tourIndex] : null;
+  let goal = tour || (game.stage === "infiltrate" ? arena.mission.target : arena.mission.exfil);
+  let label = tour ? `${game.tourIndex + 1}. ${tour.name}` : game.stage === "infiltrate" ? "Recover the sealed dispatch" : "Reach the harbour skiff";
+  if (player.inWater && !game.inTunnel) {
+    const entry = nearestSeaEntry();
+    goal = entry.exterior;
+    label = `${entry.shortName} · hold E to climb`;
+    guidance.path = [{x:player.position.x,z:player.position.z}, {x:goal.x,z:goal.z}];
+  } else if (game.inTunnel) {
+    const portal = arena.tunnel.portals[goal.x < 0 ? 0 : 1];
+    goal = portal.underground;
+    label = `Follow the tunnel · ${portal.id === "port" ? "harbour stair" : "fortress stair"}`;
+    guidance.path = tunnelNavigation.route(player.position, goal);
+  } else {
+    guidance.path = surfaceNavigation.route(player.position, goal);
+    if (!guidance.path && !tour && game.stage === "extract") {
+      goal = arena.tunnel.portals[0].surface;
+      label = "Reach the Templar passage · hold E at stair";
+      guidance.path = surfaceNavigation.route(player.position, goal);
+    }
   }
-
-  const ctx = mapContext;
-  const margin = Math.max(18, Math.min(30, rect.width * 0.026));
-  const mapWidth = rect.width - margin * 2;
-  const mapHeight = rect.height - margin * 2;
-  const world = ACRE_PLAN.world;
-  const scaleX = mapWidth / (world.right - world.left);
-  const scaleZ = mapHeight / (world.bottom - world.top);
-  const project = (x, z) => ({
-    x: margin + (x - world.left) * scaleX,
-    y: margin + (z - world.top) * scaleZ,
-  });
-  const pathWorld = (target, points, close = false) => {
-    target.beginPath();
-    points.forEach(([x, z], index) => {
-      const p = project(x, z);
-      if (index === 0) target.moveTo(p.x, p.y);
-      else target.lineTo(p.x, p.y);
-    });
-    if (close) target.closePath();
-  };
-  const lineWorld = (target, points, color, width = 1, dash = []) => {
-    pathWorld(target, points);
-    target.strokeStyle = color;
-    target.lineWidth = width;
-    target.lineJoin = "round";
-    target.lineCap = "round";
-    target.setLineDash(dash);
-    target.stroke();
-    target.setLineDash([]);
-  };
-  const rectWorld = (target, x1, z1, x2, z2, fill, stroke = null, width = 1) => {
-    const a = project(x1, z1);
-    const b = project(x2, z2);
-    target.fillStyle = fill;
-    target.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
-    if (stroke) {
-      target.strokeStyle = stroke;
-      target.lineWidth = width;
-      target.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+  guidance.goal = {x:goal.x,z:goal.z}; guidance.label = label;
+  $("map-objective").textContent = guidance.label;
+  if (tour) {
+    const reached = !game.inTunnel && Math.hypot(tour.x-player.position.x,tour.z-player.position.z)<7;
+    if (reached && !game.tourDiscovered.has(game.tourIndex)) {
+      game.tourDiscovered.add(game.tourIndex);
+      addFeed(`${tour.name} · hold M to read · N for next place`);
     }
-  };
-  const tower = (target, x, z, radius = 4) => {
-    const p = project(x, z);
-    target.beginPath();
-    target.arc(p.x, p.y, radius, 0, Math.PI * 2);
-    target.fillStyle = "#b38a50";
-    target.fill();
-    target.strokeStyle = "#4d3823";
-    target.lineWidth = 1.2;
-    target.stroke();
-    target.beginPath();
-    target.moveTo(p.x - radius * 0.55, p.y);
-    target.lineTo(p.x + radius * 0.55, p.y);
-    target.stroke();
-  };
-  const staticKey = `${pixelWidth}x${pixelHeight}:${mapParchment.complete ? 1 : 0}`;
-
-  if (mapStaticKey !== staticKey) {
-    mapStaticKey = staticKey;
-    mapStaticCanvas.width = pixelWidth;
-    mapStaticCanvas.height = pixelHeight;
-    const ink = mapStaticCanvas.getContext("2d");
-    ink.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ink.clearRect(0, 0, rect.width, rect.height);
-
-    if (mapParchment.complete && mapParchment.naturalWidth > 0) {
-      const imageRatio = mapParchment.naturalWidth / mapParchment.naturalHeight;
-      const canvasRatio = rect.width / rect.height;
-      let sourceWidth = mapParchment.naturalWidth;
-      let sourceHeight = mapParchment.naturalHeight;
-      let sourceX = 0;
-      let sourceY = 0;
-      if (imageRatio > canvasRatio) {
-        sourceWidth = sourceHeight * canvasRatio;
-        sourceX = (mapParchment.naturalWidth - sourceWidth) / 2;
-      } else {
-        sourceHeight = sourceWidth / canvasRatio;
-        sourceY = (mapParchment.naturalHeight - sourceHeight) / 2;
-      }
-      ink.drawImage(
-        mapParchment,
-        sourceX,
-        sourceY,
-        sourceWidth,
-        sourceHeight,
-        0,
-        0,
-        rect.width,
-        rect.height,
-      );
-    } else {
-      ink.fillStyle = "#dcc58e";
-      ink.fillRect(0, 0, rect.width, rect.height);
-    }
-    ink.fillStyle = "rgba(223,202,151,.15)";
-    ink.fillRect(0, 0, rect.width, rect.height);
-
-    // A muted watercolor sea surrounds the defensible peninsula.
-    ink.fillStyle = "rgba(63,112,117,.31)";
-    ink.fillRect(margin, margin, mapWidth, mapHeight);
-    const coast = ACRE_PLAN.cityOutline;
-    pathWorld(ink, coast, true);
-    ink.fillStyle = "rgba(222,199,142,.94)";
-    ink.fill();
-    ink.strokeStyle = "#4f3a24";
-    ink.lineWidth = 2.3;
-    ink.stroke();
-
-    // Watercolor variation and ink wavelets.
-    const seeded = (seed) => {
-      const value = Math.sin(seed * 913.17 + 17.31) * 43758.5453;
-      return value - Math.floor(value);
-    };
-    for (let i = 0; i < 70; i += 1) {
-      const x = margin + seeded(i + 2) * mapWidth;
-      const y = margin + seeded(i + 89) * mapHeight;
-      const worldPoint = {
-        x: world.left + ((x - margin) / mapWidth) * (world.right - world.left),
-        z: world.top + ((y - margin) / mapHeight) * (world.bottom - world.top),
-      };
-      const inOpenSea = !pointInPolygon([worldPoint.x, worldPoint.z], coast);
-      if (!inOpenSea) continue;
-      const length = 5 + seeded(i + 311) * 13;
-      ink.beginPath();
-      ink.moveTo(x - length / 2, y);
-      ink.quadraticCurveTo(x, y + 2.4, x + length / 2, y);
-      ink.strokeStyle = `rgba(48,86,88,${0.16 + seeded(i + 620) * 0.16})`;
-      ink.lineWidth = 0.7;
-      ink.stroke();
-    }
-
-    const districts = ACRE_PLAN.districts;
-    districts.forEach((district) => {
-      pathWorld(ink, district.polygon, true);
-      ink.fillStyle = district.tone;
-      ink.fill();
-      ink.strokeStyle = "rgba(89,61,34,.24)";
-      ink.lineWidth = 0.65;
-      ink.setLineDash([2, 3]);
-      ink.stroke();
-      ink.setLineDash([]);
-    });
-
-    const reserved = [
-      [-31, -43, 18], [-20, -5, 12], [-78, 58, 18],
-      [-39, 12, 7], [48, 8, 8], [52, 56, 8], [82, 29, 8],
-    ];
-    const distanceToSegment = (x, z, [ax, az], [bx, bz]) => {
-      const deltaX = bx - ax;
-      const deltaZ = bz - az;
-      const lengthSquared = deltaX * deltaX + deltaZ * deltaZ;
-      const t = lengthSquared === 0
-        ? 0
-        : Math.max(0, Math.min(1, ((x - ax) * deltaX + (z - az) * deltaZ) / lengthSquared));
-      return Math.hypot(x - (ax + deltaX * t), z - (az + deltaZ * t));
-    };
-    const nearRoad = (x, z) =>
-      ACRE_PLAN.roads.some((road) => road.points.some(
-        (point, index) => index > 0
-          && distanceToSegment(x, z, road.points[index - 1], point) < (
-            road.kind === "primary" ? 4.3 : 2.7
-          ),
-      ))
-      || reserved.some(([rx, rz, radius]) => Math.hypot(x - rx, z - rz) < radius);
-    const building = (x, z, width, depth, seed) => {
-      const p = project(x, z);
-      const pw = Math.max(2.2, width * scaleX);
-      const ph = Math.max(2, depth * scaleZ);
-      const lift = 1.1 + seeded(seed + 5) * 2;
-      ink.save();
-      ink.translate(p.x, p.y);
-      ink.rotate((seeded(seed + 13) - 0.5) * 0.16);
-      ink.fillStyle = "rgba(61,45,28,.26)";
-      ink.fillRect(-pw / 2 + 2, -ph / 2 + 2.6, pw, ph);
-      ink.beginPath();
-      ink.moveTo(-pw / 2, -ph / 2);
-      ink.lineTo(pw / 2, -ph / 2);
-      ink.lineTo(pw / 2 - lift, -ph / 2 - lift);
-      ink.lineTo(-pw / 2 - lift, -ph / 2 - lift);
-      ink.closePath();
-      ink.fillStyle = seeded(seed) > 0.8 ? "#c58d58" : seeded(seed) > 0.42 ? "#d5b374" : "#e0c78e";
-      ink.fill();
-      ink.strokeStyle = "rgba(73,52,31,.72)";
-      ink.lineWidth = 0.65;
-      ink.stroke();
-      ink.fillStyle = seeded(seed + 9) > 0.72 ? "#a96b42" : "#bc915b";
-      ink.fillRect(pw / 2 - lift, -ph / 2 - lift, lift, ph + lift);
-      if (seeded(seed + 21) > 0.72 && pw > 4) {
-        ink.fillStyle = "rgba(74,56,34,.52)";
-        ink.fillRect(-pw * 0.22, -ph * 0.38, pw * 0.16, ph * 0.18);
-      }
-      ink.restore();
-    };
-    districts.forEach((district, districtIndex) => {
-      const bounds = planBounds(district.polygon);
-      const spacing = district.id === "montmusard" ? 11 : 7.6;
-      let seedIndex = 100 + districtIndex * 701;
-      for (let z = bounds.minZ + spacing / 2; z < bounds.maxZ; z += spacing) {
-        for (let x = bounds.minX + spacing / 2; x < bounds.maxX; x += spacing) {
-          const seed = seedIndex;
-          seedIndex += 1;
-          const jitterX = (seeded(seed) - 0.5) * spacing * 0.48;
-          const jitterZ = (seeded(seed + 1) - 0.5) * spacing * 0.48;
-          const buildingX = x + jitterX;
-          const buildingZ = z + jitterZ;
-          if (
-            !pointInPolygon([buildingX, buildingZ], district.polygon)
-            || nearRoad(buildingX, buildingZ)
-            || seeded(seed + 8) < (district.id === "montmusard" ? 0.36 : 0.12)
-          ) continue;
-          building(
-            buildingX,
-            buildingZ,
-            spacing * (0.45 + seeded(seed + 2) * 0.25),
-            spacing * (0.42 + seeded(seed + 3) * 0.27),
-            seed,
-          );
-        }
-      }
-    });
-
-    // Gardens in the military and ecclesiastical compounds.
-    rectWorld(ink, -50, -56, -39, -35, "rgba(91,123,72,.26)", "#69553899", 0.8);
-    for (let treeIndex = 0; treeIndex < 16; treeIndex += 1) {
-      const p = project(-48 + (treeIndex % 4) * 2.7, -53 + Math.floor(treeIndex / 4) * 4.7);
-      ink.beginPath();
-      ink.arc(p.x, p.y, 1.4, 0, Math.PI * 2);
-      ink.fillStyle = "rgba(61,96,55,.7)";
-      ink.fill();
-    }
-    rectWorld(ink, -91, 47, -66, 70, "rgba(102,124,67,.18)", "#69553899", 0.8);
-
-    // Main roads laid over the dense fabric.
-    ACRE_PLAN.roads.forEach((road) => {
-      const primary = road.kind === "primary";
-      lineWorld(ink, road.points, primary ? "rgba(234,213,165,.92)" : "rgba(226,203,150,.82)", primary ? 5.5 : 3.3);
-      lineWorld(ink, road.points, "rgba(115,84,48,.46)", 0.8, [2, 5]);
-    });
-
-    // Fortifications: heavy land walls, old-city divider, towers, and quays.
-    const walls = [
-      ACRE_PLAN.montmusardOuterWall,
-      ACRE_PLAN.montmusardInnerWall,
-      ACRE_PLAN.westernSeaWall,
-      ACRE_PLAN.southernSeaWall,
-      ACRE_PLAN.easternWall,
-      ACRE_PLAN.oldCityWall.slice(0, 3),
-      ACRE_PLAN.oldCityWall.slice(3),
-    ];
-    walls.forEach((wall) => {
-      lineWorld(ink, wall, "#503923", 6);
-      lineWorld(ink, wall, "#c2a36a", 2.4);
-      lineWorld(ink, wall, "rgba(65,45,26,.8)", 0.8, [3, 4]);
-    });
-    [
-      [-102, -124], [-72, -128], [-38, -119], [5, -105], [48, -90],
-      [82, -77], [95, -66], [-101, -64], [-62, -64], [-24, -64],
-      [15, -64], [52, -63], [91, -61], [-90, 75], [-62, 82],
-      [-20, 82], [25, 79], [88, 36],
-    ].forEach(([x, z]) => tower(ink, x, z, 3.7));
-
-    // Templar castle.
-    rectWorld(ink, -92, 46, -62, 71, "#c8a467", "#49331f", 2);
-    rectWorld(ink, -87, 51, -67, 67, "rgba(107,129,68,.22)", "#6f5635", 1);
-    [[-92, 46], [-62, 46], [-92, 71], [-62, 71]].forEach(([x, z]) => tower(ink, x, z, 5));
-
-    // Hospitaller headquarters and its excavated courtyard.
-    rectWorld(ink, -57, -61, -6, -24, "rgba(195,159,98,.8)", "#4d3721", 2);
-    rectWorld(ink, -49, -55, -14, -31, "rgba(105,133,75,.24)", "#665038", 1.3);
-    rectWorld(ink, -44, -50, -20, -36, "rgba(224,200,145,.78)", "#665038", 1);
-    for (let col = 0; col < 8; col += 1) {
-      tower(ink, -47 + col * 4.3, -32, 1.8);
-    }
-
-    // Cathedral of the Holy Cross.
-    rectWorld(ink, -29, -14, -11, 5, "#d4b476", "#49331f", 1.5);
-    rectWorld(ink, -34, -8, -6, -1, "#d4b476", "#49331f", 1.3);
-    const apse = project(-20, 7);
-    ink.beginPath();
-    ink.arc(apse.x, apse.y, 5, 0, Math.PI * 2);
-    ink.fillStyle = "#bb8953";
-    ink.fill();
-    ink.strokeStyle = "#49331f";
-    ink.stroke();
-    const cross = project(-20, -5);
-    ink.fillStyle = "#733326";
-    ink.font = "700 13px Georgia, serif";
-    ink.textAlign = "center";
-    ink.fillText("✝", cross.x, cross.y + 4);
-
-    // Merchant courts and the archaeology-led harbour. Jacoby's reconstruction
-    // rules out the square inner basin shown on later manuscript plans.
-    pathWorld(ink, ACRE_PLAN.harbour.innerWater, true);
-    ink.fillStyle = "rgba(56,105,111,.55)";
-    ink.fill();
-    ink.strokeStyle = "rgba(49,76,77,.72)";
-    ink.lineWidth = 1.2;
-    ink.stroke();
-
-    rectWorld(ink, -46, 5, -32, 19, "#c9a56b", "#4d3721", 1.2);
-    rectWorld(ink, -42, 8, -36, 16, "rgba(218,192,133,.78)", "#71583a", 0.8);
-    rectWorld(ink, 41, 0, 55, 17, "#c9a56b", "#4d3721", 1.2);
-    rectWorld(ink, 45, 4, 51, 13, "rgba(218,192,133,.78)", "#71583a", 0.8);
-    rectWorld(ink, -27, 45, -9, 60, "#c4a168", "#4d3721", 1.2);
-    rectWorld(ink, 74, 23, 88, 35, "#b8935e", "#4d3721", 1.3);
-
-    lineWorld(ink, ACRE_PLAN.harbour.southernBreakwater, "#4c3824", 5.5);
-    lineWorld(ink, ACRE_PLAN.harbour.easternBreakwater, "#4c3824", 5.5);
-    lineWorld(ink, ACRE_PLAN.harbour.chain, "#6e2d23", 2.8, [3, 2]);
-    tower(
-      ink,
-      ACRE_PLAN.harbour.towerOfFlies[0],
-      ACRE_PLAN.harbour.towerOfFlies[1],
-      5.3,
-    );
-    const drawShip = (x, z, size = 1) => {
-      const p = project(x, z);
-      ink.beginPath();
-      ink.moveTo(p.x - 9 * size, p.y + 3 * size);
-      ink.quadraticCurveTo(p.x, p.y + 8 * size, p.x + 10 * size, p.y + 2 * size);
-      ink.lineTo(p.x + 7 * size, p.y + 6 * size);
-      ink.quadraticCurveTo(p.x, p.y + 10 * size, p.x - 8 * size, p.y + 6 * size);
-      ink.closePath();
-      ink.fillStyle = "#7d4e2d";
-      ink.fill();
-      ink.strokeStyle = "#422d1d";
-      ink.stroke();
-      ink.beginPath();
-      ink.moveTo(p.x, p.y + 4 * size);
-      ink.lineTo(p.x, p.y - 12 * size);
-      ink.lineTo(p.x + 7 * size, p.y - 2 * size);
-      ink.closePath();
-      ink.fillStyle = "rgba(230,211,166,.88)";
-      ink.fill();
-      ink.stroke();
-    };
-    drawShip(55, 58, 0.7);
-    drawShip(83, 65, 0.85);
-    drawShip(104, 82, 0.75);
-
-    // Secret tunnel, portals, and annotation.
-    lineWorld(ink, ACRE_PLAN.tunnel.surfaceLine, "#6e2d23", 3, [8, 5]);
-    for (const portal of arena.tunnel.portals) {
-      const entry = project(portal.surface.x, portal.surface.z);
-      ink.beginPath();
-      ink.arc(entry.x, entry.y, 4.3, 0, Math.PI * 2);
-      ink.fillStyle = "#d1aa52";
-      ink.fill();
-      ink.strokeStyle = "#632b23";
-      ink.lineWidth = 1.4;
-      ink.stroke();
-    }
-    const tunnelLabel = project(-9, 50);
-    ink.fillStyle = "#6e2d23";
-    ink.font = "700 9px Georgia, serif";
-    ink.textAlign = "center";
-    ink.fillText("TEMPLAR TUNNEL", tunnelLabel.x, tunnelLabel.y - 7);
-
-    // Document every playable sea entry directly on the held city map.
-    arena.entryRoutes.filter((route) => route.exterior).forEach((route) => {
-      const entry = project(route.exterior.x, route.exterior.z);
-      ink.beginPath();
-      ink.arc(entry.x, entry.y, 5.2, 0, Math.PI * 2);
-      ink.fillStyle = "#285f63";
-      ink.fill();
-      ink.strokeStyle = "#ead7a2";
-      ink.lineWidth = 1.4;
-      ink.stroke();
-      ink.fillStyle = "#365e5d";
-      ink.font = "700 8px Georgia, serif";
-      ink.textAlign = route.exterior.x < -100 ? "left" : "center";
-      ink.fillText(
-        route.shortName,
-        entry.x + (route.exterior.x < -100 ? 8 : 0),
-        entry.y + (route.exterior.x < -100 ? -7 : 14),
-      );
-    });
-
-    // District names sit lightly beneath the landmark callouts.
-    districts.filter((district) => district.label).forEach((district) => {
-      const label = project(district.label[0], district.label[1]);
-      ink.fillStyle = district.name === "MONTMUSART" ? "rgba(82,57,31,.74)" : "rgba(89,61,34,.62)";
-      ink.font = `italic 700 ${Math.max(8, Math.min(10, rect.width / 115))}px Georgia, serif`;
-      ink.textAlign = "center";
-      ink.fillText(district.name, label.x, label.y);
-      if (!["montmusard", "royal"].includes(district.id)) {
-        ink.font = "italic 8px Georgia, serif";
-        ink.fillText("QUARTER", label.x, label.y + 9);
-      }
-    });
-
-    const callout = (x, z, label, offsetX, offsetY, align = "left") => {
-      const point = project(x, z);
-      const endX = point.x + offsetX;
-      const endY = point.y + offsetY;
-      const elbowX = point.x + offsetX * 0.58;
-      ink.beginPath();
-      ink.moveTo(point.x, point.y);
-      ink.lineTo(elbowX, endY);
-      ink.lineTo(endX, endY);
-      ink.strokeStyle = "rgba(66,45,27,.82)";
-      ink.lineWidth = 0.8;
-      ink.stroke();
-      ink.beginPath();
-      ink.arc(point.x, point.y, 1.8, 0, Math.PI * 2);
-      ink.fillStyle = "#6d3024";
-      ink.fill();
-      ink.fillStyle = "#3f2c1c";
-      ink.font = `700 ${Math.max(8, Math.min(10, rect.width / 120))}px Georgia, serif`;
-      ink.textAlign = align;
-      ink.textBaseline = "bottom";
-      ink.fillText(label, endX + (align === "left" ? 4 : -4), endY - 2);
-    };
-    callout(...ACRE_PLAN.landmarks.hospitaller, "HOSPITALLER HEADQUARTERS", -55, -29, "right");
-    callout(...ACRE_PLAN.landmarks.cathedral, "CATHEDRAL OF THE HOLY CROSS", -42, -35, "right");
-    callout(...ACRE_PLAN.landmarks.templar, "TEMPLAR CASTLE", -36, 26, "right");
-    callout(...ACRE_PLAN.landmarks.genoeseCommune, "GENOESE COMMUNE", -46, 18, "right");
-    callout(...ACRE_PLAN.landmarks.pisanFondaco, "PISAN FONDACO", -18, 28, "right");
-    callout(...ACRE_PLAN.landmarks.venetianFondaco, "VENETIAN FONDACO", 42, -26);
-    callout(...ACRE_PLAN.landmarks.arsenal, "ROYAL ARSENAL", 32, -13);
-    callout(...ACRE_PLAN.landmarks.courtOfChain, "COURT OF THE CHAIN", 30, 24);
-    callout(...ACRE_PLAN.harbour.towerOfFlies, "TOWER OF THE FLIES", -12, 18, "right");
-    callout(...ACRE_PLAN.landmarks.stAnthonyGate, "ST ANTHONY’S GATE", 25, -22);
-
-    ink.fillStyle = "rgba(54,83,84,.8)";
-    ink.font = "italic 12px Georgia, serif";
-    ink.textAlign = "left";
-    ink.fillText("Mare Mediterraneum", project(-112, 4).x, project(-112, 4).y);
-    ink.fillText("Inner Harbour", project(48, 54).x, project(48, 54).y);
-    ink.fillText("Outer Anchorage", project(91, 84).x, project(91, 84).y);
-    ink.fillStyle = "rgba(72,50,29,.8)";
-    ink.fillText("Road to Tyre", project(103, -84).x, project(103, -84).y);
-
-    const north = project(-108, -111);
-    ink.strokeStyle = "#49341f";
-    ink.fillStyle = "#49341f";
-    ink.lineWidth = 1.4;
-    ink.beginPath();
-    ink.moveTo(north.x, north.y + 18);
-    ink.lineTo(north.x, north.y - 12);
-    ink.lineTo(north.x - 4, north.y - 4);
-    ink.moveTo(north.x, north.y - 12);
-    ink.lineTo(north.x + 4, north.y - 4);
-    ink.stroke();
-    ink.font = "700 11px Georgia, serif";
-    ink.textAlign = "center";
-    ink.fillText("N", north.x, north.y - 16);
-
-    // Scale and cartographer's rule.
-    const scaleStart = project(-106, 88);
-    ink.strokeStyle = "#49341f";
-    ink.lineWidth = 1.5;
-    ink.beginPath();
-    ink.moveTo(scaleStart.x, scaleStart.y);
-    ink.lineTo(scaleStart.x + 50 * scaleX, scaleStart.y);
-    ink.moveTo(scaleStart.x, scaleStart.y - 4);
-    ink.lineTo(scaleStart.x, scaleStart.y + 4);
-    ink.moveTo(scaleStart.x + 25 * scaleX, scaleStart.y - 3);
-    ink.lineTo(scaleStart.x + 25 * scaleX, scaleStart.y + 3);
-    ink.moveTo(scaleStart.x + 50 * scaleX, scaleStart.y - 4);
-    ink.lineTo(scaleStart.x + 50 * scaleX, scaleStart.y + 4);
-    ink.stroke();
-    ink.font = "italic 8px Georgia, serif";
-    ink.textAlign = "center";
-    ink.fillText("50 PACES", scaleStart.x + 25 * scaleX, scaleStart.y - 6);
-
-    const edge = ink.createRadialGradient(
-      rect.width / 2,
-      rect.height / 2,
-      Math.min(rect.width, rect.height) * 0.18,
-      rect.width / 2,
-      rect.height / 2,
-      Math.max(rect.width, rect.height) * 0.69,
-    );
-    edge.addColorStop(0, "rgba(79,48,22,0)");
-    edge.addColorStop(1, "rgba(54,31,14,.28)");
-    ink.fillStyle = edge;
-    ink.fillRect(0, 0, rect.width, rect.height);
+    $("tour-title").textContent = `${game.tourIndex+1} / ${HISTORIC_STOPS.length} · ${tour.name}`;
+    $("tour-evidence").textContent = tour.evidence;
+    $("tour-copy").textContent = tour.text;
+    $("tour-progress").textContent = `${game.tourDiscovered.size} places visited · N next · Shift+N previous`;
   }
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, pixelWidth, pixelHeight);
-  ctx.drawImage(mapStaticCanvas, 0, 0);
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-
-  const objective =
-    !game.enteredCity && game.entryRoute?.exterior
-      ? game.entryRoute.exterior
-      : game.stage === "infiltrate"
-        ? missionObjects.terminal.position
-        : missionObjects.exfil.position;
-  const objectivePoint = project(objective.x, objective.z);
-  const playerPoint = project(player.position.x, player.position.z);
-
-  // A restrained live course line preserves the illustrated-map character.
-  ctx.beginPath();
-  ctx.moveTo(playerPoint.x, playerPoint.y);
-  const controlX = (playerPoint.x + objectivePoint.x) / 2;
-  const controlY = Math.min(playerPoint.y, objectivePoint.y) - 14;
-  ctx.quadraticCurveTo(controlX, controlY, objectivePoint.x, objectivePoint.y);
-  ctx.strokeStyle = "rgba(24,72,76,.5)";
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([3, 6]);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  const pulse = 9 + Math.sin(game.elapsed * 4) * 2;
-  ctx.beginPath();
-  ctx.arc(objectivePoint.x, objectivePoint.y, pulse, 0, Math.PI * 2);
-  ctx.strokeStyle = "#a32e23";
-  ctx.lineWidth = 2.4;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(objectivePoint.x, objectivePoint.y, 4.2, 0, Math.PI * 2);
-  ctx.fillStyle = "#a32e23";
-  ctx.fill();
-  ctx.fillStyle = "#6d251d";
-  ctx.font = "700 10px Georgia, serif";
-  ctx.textAlign = objectivePoint.x > rect.width * 0.72 ? "right" : "left";
-  ctx.fillText(
-    !game.enteredCity
-      ? game.entryRoute.method
-      : game.stage === "infiltrate"
-        ? "SEALED DISPATCH"
-        : "HARBOUR SKIFF",
-    objectivePoint.x + (ctx.textAlign === "left" ? 13 : -13),
-    objectivePoint.y - 10,
-  );
-
-  ctx.save();
-  ctx.translate(playerPoint.x, playerPoint.y);
-  ctx.rotate(-player.yaw);
-  ctx.beginPath();
-  ctx.moveTo(0, -12);
-  ctx.lineTo(8, 8);
-  ctx.lineTo(0, 4);
-  ctx.lineTo(-8, 8);
-  ctx.closePath();
-  ctx.fillStyle = game.inTunnel ? "#b27b2f" : "#173f4a";
-  ctx.fill();
-  ctx.strokeStyle = "#f2dfae";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.restore();
-  ctx.beginPath();
-  ctx.arc(playerPoint.x, playerPoint.y, 14, 0, Math.PI * 2);
-  ctx.strokeStyle = "rgba(23,63,74,.28)";
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
-
-  const currentZone = arena.zones.find((zone) => zone.box.containsPoint(player.position));
-  ctx.fillStyle = "rgba(224,199,142,.88)";
-  ctx.strokeStyle = "rgba(80,54,30,.75)";
-  ctx.lineWidth = 1;
-  ctx.fillRect(margin + 8, margin + 8, 184, 31);
-  ctx.strokeRect(margin + 8, margin + 8, 184, 31);
-  ctx.fillStyle = "#75532e";
-  ctx.font = "700 8px Georgia, serif";
-  ctx.textAlign = "left";
-  ctx.fillText(game.inTunnel ? "BELOW STREET LEVEL" : "PRESENT POSITION", margin + 16, margin + 20);
-  ctx.fillStyle = "#352719";
-  ctx.font = "700 11px Georgia, serif";
-  ctx.fillText(currentZone?.name || "OLD ACRE", margin + 16, margin + 33);
 }
 
+function drawCityMap() {
+  updateNavigation();
+  drawMap({ arena, player, path: guidance.path, goal: guidance.goal,
+    elapsed: settings.reducedMotion ? 0 : game.elapsed,
+    inTunnel: game.inTunnel, exploring: game.mode === "explore" });
+}
 function addFeed(text) {
   const item = document.createElement("span");
   item.textContent = text;
@@ -3060,12 +2591,13 @@ function addFeed(text) {
 }
 
 function showHUD(show) {
-  ["top-hud", "bottom-hud", "compass", "waypoint", "map-key", "combat-feed"].forEach((id) => {
+  ["top-hud", "bottom-hud", "compass", "waypoint", "map-key", "combat-feed", "watch-state"].forEach((id) => {
     $(id).classList.toggle("hidden", !show);
   });
   if (!show) {
     $("life-panel").classList.add("hidden");
     $("guard-order-panel").classList.add("hidden");
+    $("travel-hint").classList.add("hidden");
   }
 }
 
@@ -3074,12 +2606,25 @@ function hideCityMap() {
   $("city-map").classList.add("hidden");
 }
 
+function pauseGame(message = "Take your time. The watch is paused.") {
+  if (game.phase === "briefing" || game.phase === "ended") return;
+  game.phase = "paused";
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+  keys.clear(); mouseButtons.clear(); hideCityMap(); showHUD(false);
+  player.velocity.set(0,0,0);
+  $("interact-prompt").classList.add("hidden");
+  $("pause-copy").textContent = message;
+  $("pause-screen").classList.remove("hidden");
+  $("pause-screen").classList.add("visible");
+}
+
 function requestGamePointerLock() {
+  const failed = () => pauseGame("Mouse capture was unavailable. Click Return to Acre to try again; if this is an embedded preview, open the game in its own browser tab.");
   try {
     const request = canvas.requestPointerLock();
-    if (request?.catch) request.catch(() => {});
+    if (request?.catch) request.catch(failed);
   } catch {
-    // Embedded previews can deny pointer lock while still rendering the mission.
+    failed();
   }
 }
 
@@ -3118,6 +2663,10 @@ function deploy() {
   const seaInsertion = route.id !== "gate";
   audio.unlock();
   audio.ambientStart();
+  game.tourIndex = selectedModeId === "explore" ? 0 : -1;
+  $("map-tour").classList.toggle("hidden", selectedModeId !== "explore");
+  $("tour-key").classList.toggle("hidden", selectedModeId !== "explore");
+  guidance.nextUpdate = 0;
   player.height = 1.72;
   player.floorY = seaInsertion ? waterFloorY : route.spawn.y - player.height;
   player.position.copy(route.spawn);
@@ -3186,6 +2735,7 @@ function deploy() {
   $("mode-status").textContent =
     game.mode === "explore" ? "EXPLORATION // INVULNERABLE" : "STEALTH MISSION";
   $("mode-status").classList.toggle("exploration", game.mode === "explore");
+  if(game.mode === "explore") $("objective").textContent = "EXPLORE AT YOUR PACE · N FOR NEXT HISTORIC PLACE";
   $("start-screen").classList.remove("visible");
   $("start-screen").classList.add("hidden");
   $("pause-screen").classList.add("hidden");
@@ -3246,9 +2796,20 @@ function endGame(success) {
 }
 
 document.addEventListener("keydown", (event) => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;
+  if (game.phase !== "running") return;
+  if (["KeyW","KeyA","KeyS","KeyD","KeyE","KeyM","Space","ControlLeft"].includes(event.code)) event.preventDefault();
   keys.add(event.code);
+  if (event.code === "KeyN" && !event.repeat && game.mode === "explore") {
+    game.tourIndex = (game.tourIndex + (event.shiftKey ? HISTORIC_STOPS.length-1 : 1)) % HISTORIC_STOPS.length;
+    guidance.nextUpdate = 0; updateNavigation();
+    addFeed(`Visit ${HISTORIC_STOPS[game.tourIndex].name} · M for history`);
+    if (mapVisible) drawCityMap();
+  }
   if (event.code === "KeyM" && game.phase === "running" && !event.repeat) {
     mapVisible = true;
+    mouseButtons.clear();
+    player.velocity.set(0,0,0);
     $("city-map").classList.remove("hidden");
     drawCityMap();
   }
@@ -3265,9 +2826,9 @@ document.addEventListener("keyup", (event) => {
   }
 });
 document.addEventListener("mousemove", (event) => {
-  if (document.pointerLockElement !== canvas || game.phase !== "running") return;
-  player.yaw -= event.movementX * 0.00175;
-  player.pitch -= event.movementY * 0.00175;
+  if (document.pointerLockElement !== canvas || game.phase !== "running" || mapVisible) return;
+  player.yaw -= event.movementX * 0.00175 * settings.sensitivity;
+  player.pitch -= event.movementY * 0.00175 * settings.sensitivity;
   player.pitch = THREE.MathUtils.clamp(player.pitch, -1.42, 1.42);
 });
 document.addEventListener("mousedown", (event) => {
@@ -3275,7 +2836,7 @@ document.addEventListener("mousedown", (event) => {
     document.documentElement.dataset.lastMouseDown = String(event.button);
   }
   if (
-    game.phase === "running" &&
+    game.phase === "running" && document.pointerLockElement === canvas && !mapVisible &&
     (event.button === 0 || event.button === 2)
   ) {
     mouseButtons.add(event.button);
@@ -3288,12 +2849,7 @@ document.addEventListener("contextmenu", (event) => event.preventDefault());
 document.addEventListener("pointerlockchange", () => {
   if (game.phase === "ended" || game.phase === "briefing") return;
   if (document.pointerLockElement !== canvas) {
-    mouseButtons.clear();
-    game.phase = "paused";
-    hideCityMap();
-    $("pause-screen").classList.remove("hidden");
-    $("pause-screen").classList.add("visible");
-    showHUD(false);
+    pauseGame();
   } else {
     game.phase = "running";
     $("pause-screen").classList.remove("visible");
@@ -3301,7 +2857,9 @@ document.addEventListener("pointerlockchange", () => {
     showHUD(true);
   }
 });
-addEventListener("blur", () => mouseButtons.clear());
+addEventListener("blur", () => pauseGame());
+document.addEventListener("visibilitychange", () => { if (document.hidden) pauseGame(); });
+document.addEventListener("pointerlockerror", () => pauseGame("Mouse capture was denied. Click Return to Acre to retry."));
 
 $("deploy-button").addEventListener("click", deploy);
 document.querySelectorAll(".route-option").forEach((button) => {
@@ -3312,6 +2870,24 @@ document.querySelectorAll(".mode-option").forEach((button) => {
 });
 $("resume-button").addEventListener("click", requestGamePointerLock);
 $("restart-button").addEventListener("click", () => location.reload());
+$("new-route-button").addEventListener("click", () => location.reload());
+document.querySelectorAll("[data-setting]").forEach(input => {
+  const name = input.dataset.setting;
+  if (input.type === "checkbox") input.checked = settings[name];
+  else input.value = settings[name];
+  input.addEventListener("input", () => {
+    settings[name] = input.type === "checkbox" ? input.checked : Number(input.value);
+    renderer.toneMappingExposure = settings.brightness;
+    document.documentElement.classList.toggle("reduced-motion", settings.reducedMotion);
+    document.querySelectorAll(`[data-setting="${name}"]`).forEach(other => {
+      if (other.type === "checkbox") other.checked = settings[name]; else other.value = settings[name];
+    });
+    try { localStorage.setItem("acre-settings", JSON.stringify(settings)); } catch {}
+    composer.render();
+  });
+});
+$("setting-note").textContent = SETTING_NOTE;
+document.documentElement.classList.toggle("reduced-motion", settings.reducedMotion);
 canvas.addEventListener("click", () => {
   if (game.phase === "running" && document.pointerLockElement !== canvas) requestGamePointerLock();
 });
@@ -3330,7 +2906,7 @@ addEventListener("resize", () => {
   renderQuality.pixelRatio = Math.min(renderQuality.pixelRatio, renderQuality.maxPixelRatio);
   applyRenderSize();
   renderer.shadowMap.needsUpdate = true;
-  mapStaticKey = "";
+  if (mapVisible) drawCityMap();
 });
 
 let performanceFrames = 0;
@@ -3339,7 +2915,6 @@ let lastFrameRenderStats = { calls: 0, triangles: 0 };
 let renderTimeSamples = [];
 let frameWorkSamples = [];
 let hudElapsed = Infinity;
-let mapDrawElapsed = Infinity;
 function updateAdaptiveQuality(now) {
   performanceFrames += 1;
   const windowDuration = now - performanceWindowStarted;
@@ -3433,8 +3008,9 @@ function animate() {
   requestAnimationFrame(animate);
   const frameWorkStarted = performance.now();
   const dt = Math.min(clock.getDelta(), 0.04);
-  game.elapsed += dt;
-  gradePass.uniforms.time.value = game.elapsed;
+  const playing = game.phase === "running" && !mapVisible;
+  if (playing) game.elapsed += dt;
+  gradePass.uniforms.time.value = settings.reducedMotion ? 0 : game.elapsed;
   shadowUpdateElapsed += dt;
   if (renderQuality.shadows && shadowUpdateElapsed >= 0.12) {
     moonTarget.position.set(player.position.x, 0, player.position.z);
@@ -3445,7 +3021,7 @@ function animate() {
   updateArena(dt);
   updateTunnelAtmosphere(dt);
 
-  if (game.phase === "running") {
+  if (playing) {
     game.missionTime += dt;
     updatePlayer(dt);
     updateMoonExposure(dt);
@@ -3455,13 +3031,6 @@ function animate() {
     if (hudElapsed >= 0.05) {
       updateHUD();
       hudElapsed = 0;
-    }
-    if (mapVisible) {
-      mapDrawElapsed += dt;
-      if (mapDrawElapsed >= 1 / 30) {
-        drawCityMap();
-        mapDrawElapsed = 0;
-      }
     }
   } else if (game.phase === "briefing") {
     camera.position.set(100, 25, 105);

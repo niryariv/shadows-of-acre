@@ -1,5 +1,6 @@
 import { mergeGeometries as mergeBufferGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { ACRE_PLAN } from "./acre-plan.js";
+import { ACRE_PLAN, pointInPolygon } from "./acre-plan.js";
+import { HISTORIC_STOPS } from "./history.js";
 
 export function mergeGeometries(geometries, useGroups = false) {
   if (!Array.isArray(geometries) || geometries.length === 0) {
@@ -364,12 +365,12 @@ export function buildArena(THREE, scene) {
       new THREE.Vector3(76, 0, -69),
       new THREE.Vector3(46, 0, -66),
       new THREE.Vector3(17, 0, -60),
-      new THREE.Vector3(-8, 0, -36),
+      new THREE.Vector3(-3, 0, -39),
       new THREE.Vector3(-24, 0, -42),
       new THREE.Vector3(-2, 0, 5),
       new THREE.Vector3(-22, 0, 29),
       new THREE.Vector3(28, 0, 38),
-      new THREE.Vector3(46, 0, 56),
+      new THREE.Vector3(29, 0, 61),
     ],
     wallGuardSpawns: [
       {
@@ -996,10 +997,12 @@ export function buildArena(THREE, scene) {
     blending: THREE.AdditiveBlending,
   });
 
-  const addCollider = (size, position) => {
+  const addCollider = (size, position, mapVisible = true) => {
     const center = new THREE.Vector3(...position);
     const half = new THREE.Vector3(size[0] / 2, size[1] / 2, size[2] / 2);
-    colliders.push(new THREE.Box3(center.clone().sub(half), center.clone().add(half)));
+    const box = new THREE.Box3(center.clone().sub(half), center.clone().add(half));
+    box.mapVisible = mapVisible;
+    colliders.push(box);
   };
 
   const addBox = ({
@@ -1162,13 +1165,8 @@ export function buildArena(THREE, scene) {
     else cityShape.lineTo(x, -z);
   });
   cityShape.closePath();
-  const harbourCut = new THREE.Path();
-  ACRE_PLAN.harbour.innerWater.forEach(([x, z], index) => {
-    if (index === 0) harbourCut.moveTo(x, -z);
-    else harbourCut.lineTo(x, -z);
-  });
-  harbourCut.closePath();
-  cityShape.holes.push(harbourCut);
+  // The harbour is already an indentation in the coastline. A hole crossing
+  // outside that polygon produces invalid triangulation and missing ground.
   const cityGroundGeometry = new THREE.ShapeGeometry(cityShape);
   cityGroundGeometry.rotateX(-Math.PI / 2);
   const cityGround = new THREE.Mesh(cityGroundGeometry, cobbles);
@@ -1176,6 +1174,14 @@ export function buildArena(THREE, scene) {
   cityGround.receiveShadow = true;
   cityGround.name = "Archaeological outline of Frankish Acre";
   root.add(cityGround);
+  const mainlandShape = new THREE.Shape(ACRE_PLAN.mainland.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const mainlandGeometry = new THREE.ShapeGeometry(mainlandShape);
+  mainlandGeometry.rotateX(-Math.PI / 2);
+  const mainland = new THREE.Mesh(mainlandGeometry, sandyEarth);
+  mainland.position.y = 0.17;
+  mainland.receiveShadow = true;
+  mainland.name = "Coastal plain north and east of Acre";
+  root.add(mainland);
   addBox({
     size: [55, 0.7, 52],
     position: [106.5, -0.18, -71],
@@ -1183,10 +1189,14 @@ export function buildArena(THREE, scene) {
     name: "Eastern approach",
     shadows: false,
   });
-  addBox({ size: [110, 0.07, 5.8], position: [75, 0.31, -71], material: packedEarth, shadows: false, name: "St Anthony approach road" });
-  addBox({ size: [5.8, 0.07, 113], position: [9, 0.31, 3.5], material: packedEarth, shadows: false, name: "Via Regis" });
-  addBox({ size: [48, 0.07, 5.8], position: [33, 0.31, 44], material: packedEarth, shadows: false, name: "Harbour road" });
-  addBox({ size: [5.2, 0.075, 43], position: [-4, 0.315, -42], material: packedEarth, shadows: false, name: "Hospitaller street" });
+  for (const road of ACRE_PLAN.roads) {
+    road.points.slice(1).forEach(([bx, bz], i) => {
+      const [ax, az] = road.points[i];
+      const mesh = addBox({ size: [Math.hypot(bx - ax, bz - az) + 0.15, 0.04, road.kind === "primary" ? 4.2 : 2.7],
+        position: [(ax + bx) / 2, 0.30, (az + bz) / 2], material: packedEarth, shadows: false, name: road.id });
+      mesh.rotation.y = -Math.atan2(bz - az, bx - ax);
+    });
+  }
 
   // Dry coastal scrub and fieldstone along the landward approach. This was
   // cultivated ground beyond Acre's ditch, not an empty desert apron.
@@ -1750,11 +1760,11 @@ export function buildArena(THREE, scene) {
   addWallPolyline(ACRE_PLAN.montmusardOuterWall.slice(0, -1), "Montmusard outer wall");
   addWallSpan([82, -77], [88, -74], "Montmusard outer wall");
   addWallSpan([95, -66], [91, -68], "Montmusard outer wall");
-  addWallPolyline(ACRE_PLAN.montmusardInnerWall, "Montmusard inner wall", 6.6);
+  addWallPolyline(ACRE_PLAN.montmusardInnerWall.slice(0, -2), "Montmusard inner wall", 6.6);
+  addWallSpan([44,-85], [72,-74.3], "Montmusard inner wall", 6.6);
+  addWallSpan([86,-66], [91,-63], "Inner gate return", 6.6);
 
-  addWall([3.2, 7.5, 30], [94, 3.75, -45], "Eastern old-city wall");
-  addWall([3.2, 7.5, 25], [94, 3.75, 4.5], "Eastern outer wall");
-  addWall([3.2, 7.5, 34], [94, 3.75, 41], "Harbour land wall");
+  addWallPolyline(ACRE_PLAN.easternWall, "Eastern landward defenses");
 
   addWall([74, 5.8, 2.7], [-61, 2.9, -64], "Old northern wall");
   addWall([64, 5.8, 2.7], [47, 2.9, -64], "Old northern wall");
@@ -1869,7 +1879,7 @@ export function buildArena(THREE, scene) {
   };
 
   addTower(-101, -122, 5.8, 11, "North-west Montmusard sea tower");
-  addTower(82, -77, 6.2, 12, "Montmusard eastern tower");
+  addTower(82, -83, 6.2, 12, "Montmusard eastern tower");
   addTower(92, 18, 5.2, 10, "Eastern wall tower");
   addTower(89, 76, 5.8, 11, "Burj al-Sultan harbour tower");
 
@@ -2396,7 +2406,7 @@ export function buildArena(THREE, scene) {
     [-86, -107, 13, 10, 5.8], [-67, -106, 12, 10, 6.5],
     [-48, -100, 14, 11, 6], [-29, -94, 13, 10, 6.8],
     [-10, -88, 14, 11, 7], [12, -82, 15, 10, 6],
-    [50, -74, 13, 11, 6.8],
+    [50, -78, 13, 6, 6.8],
   ].forEach(([x, z, w, d, h]) => addHouse({ x, z, w, d, h, name: "Montmusard house" }));
 
   // Hospitaller headquarters: massive wings around a large central court.
@@ -3246,9 +3256,7 @@ export function buildArena(THREE, scene) {
   };
 
   // Inner harbour, stone quays, mole, and the extraction skiff.
-  addCollider([52, 2.3, 16], [68, 0.8, 50]);
-  addCollider([52, 2.3, 13], [68, 0.8, 75.5]);
-  addCollider([28, 2.3, 12], [80, 0.8, 64]);
+  // Visible quay masonry supplies collision. The sea itself is swimmable.
   const addQuaySpan = ([startX, startZ], [endX, endZ], width, height, name) => {
     const deltaX = endX - startX;
     const deltaZ = endZ - startZ;
@@ -5706,9 +5714,40 @@ export function buildArena(THREE, scene) {
   // Invisible outer limits and harbour safety volumes. Leave the landward
   // insertion open on St Anthony's road at the south-eastern edge of
   // Montmusard.
-  addCollider([3, 8, 52], [128, 4, -106]);
-  addCollider([3, 8, 156], [128, 4, 16]);
-  addCollider([244, 8, 3], [6, 4, -134]);
+  addCollider([3, 8, 52], [128, 4, -106], false);
+  addCollider([3, 8, 156], [128, 4, 16], false);
+  addCollider([244, 8, 3], [6, 4, -134], false);
+
+  // Compact residential infill: preserve lanes, courtyards and all interaction
+  // approaches. Flat lime roofs and small courts vary the merchant skyline.
+  const distanceToRoad = (x,z,[ax,az],[bx,bz]) => {
+    const dx=bx-ax,dz=bz-az;
+    const t=Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/(dx*dx+dz*dz)));
+    return Math.hypot(x-ax-dx*t,z-az-dz*t);
+  };
+  const protectedPoints = [mission.target,mission.exfil,...entryRoutes.map(r=>r.arrival),
+    ...tunnel.portals.map(p=>p.surface),...streetCover.map(c=>c.approach),...HISTORIC_STOPS];
+  let infillCount=0;
+  for (let z=-108;z<72;z+=13) for (let x=-89;x<85;x+=13) {
+    if(infillCount>=28) break;
+    const w=5.4+cityRandom()*1.2,d=5.2+cityRandom()*1.4,h=3.7+cityRandom()*2.4;
+    const corners=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([sx,sz])=>[x+sx*(w/2+2),z+sz*(d/2+2)]);
+    if(!corners.every(p=>pointInPolygon(p,ACRE_PLAN.cityOutline)))continue;
+    if(colliders.some(b=>b.max.y>0&&b.min.y<4&&x+w/2+2>b.min.x&&x-w/2-2<b.max.x&&z+d/2+2>b.min.z&&z-d/2-2<b.max.z))continue;
+    if(protectedPoints.some(p=>Math.hypot(p.x-x,p.z-z)<9))continue;
+    if(ACRE_PLAN.roads.some(r=>r.points.slice(1).some((p,i)=>distanceToRoad(x,z,r.points[i],p)<Math.max(w,d)/2+3.5)))continue;
+    const group=new THREE.Group(); group.name="Reconstructed courtyard dwelling"; root.add(group);
+    const material=plasterMaterials[infillCount%plasterMaterials.length];
+    addBox({size:[w,h,d],position:[x,h/2,z],material,collider:true,parent:group});
+    addBox({size:[w+.15,.45,d+.15],position:[x,.225,z],material:oldStone,parent:group});
+    for(const side of [-1,1]) {
+      addBox({size:[w,.55,.22],position:[x,h+.2,z+side*d/2],material:paleStone,parent:group});
+      addBox({size:[.22,.55,d],position:[x+side*w/2,h+.2,z],material:paleStone,parent:group});
+      addBox({size:[.68,1.1,.08],position:[x+side*w*.29,h*.7,z+d/2+.06],material:darkTimber,parent:group,shadows:false});
+    }
+    addBox({size:[1.15,2.1,.12],position:[x,1.05,z+d/2+.05],material:timber,parent:group,shadows:false});
+    infillCount++;
+  }
 
   const zones = [
     { name: "TEMPLAR TUNNEL", box: new THREE.Box3(new THREE.Vector3(-58, -7, 47), new THREE.Vector3(39, -1, 53)) },
@@ -5792,6 +5831,9 @@ export function buildArena(THREE, scene) {
 
   return {
     colliders,
+    isDryLand: (x, z) => pointInPolygon([x, z], ACRE_PLAN.cityOutline)
+      || pointInPolygon([x, z], ACRE_PLAN.mainland)
+      || (x >= 30 && x <= 54 && z >= 61.1 && z <= 66.9),
     spawnPoints: entryRoutes.map((route) => route.spawn.clone()),
     enemySpawns: [
       ...mission.guardSpawns.map((position) => position.clone()),
@@ -5810,5 +5852,6 @@ export function buildArena(THREE, scene) {
     renderBudget,
     vesselRenderBudget,
     objectRenderBudget,
+    infillCount,
   };
 }

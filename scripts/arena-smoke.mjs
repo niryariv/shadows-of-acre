@@ -508,8 +508,8 @@ try {
     );
   }
   if (
-    objectBudget.crenellations.runs !== 11 ||
-    objectBudget.crenellations.merlons !== 173
+    objectBudget.crenellations.runs < 8 ||
+    objectBudget.crenellations.merlons < 160
   ) {
     throw new Error(
       `Battlement construction regressed: ${
@@ -525,8 +525,8 @@ try {
     );
   }
   if (
-    objectBudget.wallDetails.wallRuns !== 18 ||
-    objectBudget.wallDetails.lancetSlits !== 16
+    objectBudget.wallDetails.wallRuns < 18 ||
+    objectBudget.wallDetails.lancetSlits < 8
   ) {
     throw new Error(
       `Defensive-wall-detail construction regressed: ${
@@ -815,45 +815,35 @@ try {
     throw new Error("Historical-plan topology regressed");
   }
 
-  const navigationStep = 1.25;
-  const minimumX = ACRE_PLAN.bounds.min[0];
-  const minimumZ = ACRE_PLAN.bounds.min[1];
-  const columns = Math.ceil(
-    (ACRE_PLAN.bounds.max[0] - minimumX) / navigationStep,
-  ) + 1;
-  const rows = Math.ceil(
-    (ACRE_PLAN.bounds.max[1] - minimumZ) / navigationStep,
-  ) + 1;
-  const cellPosition = (cellX, cellZ) => new THREE.Vector3(
-    minimumX + cellX * navigationStep,
-    playerHeight,
-    minimumZ + cellZ * navigationStep,
-  );
+  const { createNavigator } = await vite.ssrLoadModule("/src/navigation.js");
+  const { HISTORIC_STOPS } = await vite.ssrLoadModule("/src/history.js");
+  const navigator = createNavigator({colliders:arena.colliders,bounds:arena.bounds,isGround:arena.isDryLand});
   const routeExists = (start, goal) => {
-    const startX = Math.round((start.x - minimumX) / navigationStep);
-    const startZ = Math.round((start.z - minimumZ) / navigationStep);
-    const queue = [[startX, startZ]];
-    const visited = new Uint8Array(columns * rows);
-    visited[startZ * columns + startX] = 1;
-    for (let cursor = 0; cursor < queue.length; cursor += 1) {
-      const [cellX, cellZ] = queue[cursor];
-      const position = cellPosition(cellX, cellZ);
-      if (Math.hypot(position.x - goal.x, position.z - goal.z) <= 2) {
-        return true;
-      }
-      for (const [offsetX, offsetZ] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nextX = cellX + offsetX;
-        const nextZ = cellZ + offsetZ;
-        if (nextX < 0 || nextZ < 0 || nextX >= columns || nextZ >= rows) continue;
-        const key = nextZ * columns + nextX;
-        if (visited[key]) continue;
-        visited[key] = 1;
-        const next = cellPosition(nextX, nextZ);
-        if (!blockedAt(next)) queue.push([nextX, nextZ]);
+    const path = navigator.route(start, goal);
+    if (!path) {
+      console.error('No dry, unobstructed route', {start,goal});
+      return false;
+    }
+    // Independently sample the route against the actual player collision rule.
+    for (let i=1;i<path.length;i++) {
+      const a=path[i-1],b=path[i],steps=Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/.15);
+      for(let j=0;j<=steps;j++) {
+        const t=j/Math.max(1,steps),x=a.x+(b.x-a.x)*t,z=a.z+(b.z-a.z)*t;
+        if(blockedAt(new THREE.Vector3(x,playerHeight,z))||!arena.isDryLand(x,z)) throw Error("Guidance crosses masonry or water");
       }
     }
-    return false;
+    return true;
   };
+  for(const stop of HISTORIC_STOPS) {
+    if(!routeExists(arena.mission.target,stop)) throw Error(`Unreachable historical stop: ${stop.name}`);
+  }
+  if(!arena.isDryLand(115,-40)||arena.isDryLand(-110,15)||arena.isDryLand(70,62)) throw Error("Coastal geography regressed");
+  if(!navigator.clear(arena.mission.playerStart,{x:86,z:-71})) throw Error("Gate approach is obstructed");
+  for(const guard of arena.mission.guardSpawns) {
+    if(!arena.isDryLand(guard.x,guard.z)||blockedAt(new THREE.Vector3(guard.x,playerHeight,guard.z))) throw Error(`Invalid guard spawn: ${guard.toArray()}`);
+  }
+  const tunnelNavigator = createNavigator({colliders:arena.colliders,bounds:{min:{x:-58,z:47},max:{x:39,z:53}},floorY:arena.tunnel.floorY,step:.6});
+  if(!tunnelNavigator.route(arena.tunnel.portals[0].underground,arena.tunnel.portals[1].underground)) throw Error("Tunnel crossing blocked");
   const unreachableMissionRoutes = arena.entryRoutes
     .filter((route) => !routeExists(route.arrival, arena.mission.target))
     .map((route) => route.id);

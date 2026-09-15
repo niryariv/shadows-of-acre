@@ -62,6 +62,8 @@
       </section>
 
       <div id="map-key" class="hud hidden"><kbd>M</kbd> HOLD // CITY MAP</div>
+      <div id="watch-state" class="hud hidden">NO SIGN OF PURSUIT</div>
+      <div id="travel-hint" class="hud hidden"></div>
 
       <section id="city-map" class="hidden" aria-label="Map of Acre">
         <div class="map-frame">
@@ -69,7 +71,7 @@
             <div>
               <span>TABULA CIVITATIS ACON</span>
               <h2>ST JEAN D’ACRE</h2>
-              <small class="map-basis">c. 1250 · ARCHAEOLOGICAL RECONSTRUCTION</small>
+              <small class="map-basis">c. 1250 · HISTORIC PLACES, RECONSTRUCTED STREETS</small>
               <p id="map-objective">I · REACH THE HOSPITALLER COURT</p>
             </div>
             <b aria-label="North">N<br /><i>↑</i></b>
@@ -85,21 +87,29 @@
             <div class="map-order templar">
               <i aria-hidden="true">✚</i>
               <p><strong>TEMPLARS</strong><span>RELIGIOUS-MILITARY ORDER</span></p>
-              <small>White mantle, red cross. Warrior monks guarding their sea fortress and port route.</small>
+              <small>Knight brothers wore white mantles with red crosses; sergeants wore darker clothing. The order held the sea fortress.</small>
             </div>
             <div class="map-order garrison">
               <i aria-hidden="true">◆</i>
               <p><strong>ACRE GARRISON</strong><span>SECULAR MEN-AT-ARMS</span></p>
               <small>Kingdom soldiers on public gates and streets; unlike the orders, they took no monastic vows.</small>
             </div>
-            <em>Patrol postings are reconstructed from Acre’s historic quarters.</em>
+            <em>Uniforms are simplified for recognition. Patrols and the mission are fictional.</em>
+            <section id="map-tour" class="hidden">
+              <b id="tour-title"></b>
+              <small id="tour-evidence"></small>
+              <p id="tour-copy"></p>
+              <small id="tour-progress"></small>
+            </section>
+            <p class="map-context">A living port in 1250, before the War of Saint Sabas and the siege of 1291. Streets are compressed for play. The route follows real openings; watch for patrols along it.</p>
           </aside>
           <footer>
             <span><i class="map-player-dot"></i> YOUR POSITION</span>
             <span><i class="map-objective-dot"></i> CURRENT OBJECTIVE</span>
             <span><i class="map-tunnel-line"></i> SECRET PASSAGE</span>
             <span><i class="map-gate-dot"></i> GATE / ENTRY</span>
-            <strong>RELEASE <kbd>M</kbd> TO CLOSE</strong>
+            <span id="tour-key" class="hidden"><kbd>N</kbd> NEXT HISTORIC PLACE</span>
+            <strong>WATCH PAUSED · RELEASE <kbd>M</kbd> TO RETURN</strong>
           </footer>
         </div>
       </section>
@@ -167,15 +177,11 @@
         <div class="briefing-card">
           <div id="route-status" class="status-line"><i></i> INSERTION · ST ANTHONY’S GATE</div>
           <p>
-            Enter Frankish Acre beneath a bright Mediterranean moon. Keep to
-            roof shadow, cross the merchant quarters, and take the sealed
-            dispatch from the Hospitaller court. Reach the skiff unseen and
-            unharmed. You enter unarmed. In Mission mode, confirmation by the
-            watch ends the run; Exploration mode keeps the city open without
-            failure. Listen carefully: iron-shod steps grow sharper as guards
-            approach and dull behind stone. Distinct uniforms identify each
-            order without interrupting play; hold the city map to review them.
+            A sealed dispatch waits in the Hospitaller court. Cross the merchant
+            quarters and bring it to the harbour skiff. You carry no weapon.
+            Watch the patrols, listen for footsteps, and keep to the shadows.
           </p>
+          <ol class="mission-steps"><li>Enter the city</li><li>Recover the dispatch</li><li>Leave unseen</li></ol>
           <div class="route-heading">
             <span>CHOOSE INSERTION</span>
             <strong id="route-method">OPEN ROAD</strong>
@@ -222,7 +228,14 @@
             <span><kbd>ESC</kbd> PAUSE</span>
           </div>
           <button id="deploy-button">BEGIN INFILTRATION <i>→</i></button>
-          <small>Headphones recommended • Click to engage pointer lock</small>
+          <small>Keyboard & mouse required · Headphones recommended</small>
+          <details class="comfort-settings"><summary>Comfort &amp; historical setting</summary>
+            <label>Brightness <input type="range" data-setting="brightness" min="0.8" max="1.5" step="0.05" value="1.08" /></label>
+            <label>Mouse sensitivity <input type="range" data-setting="sensitivity" min="0.4" max="2" step="0.1" value="1" /></label>
+            <label><input type="checkbox" data-setting="reducedMotion" /> Reduce camera motion</label>
+            <p id="setting-note"></p>
+            <a href="https://github.com/niryariv/shadows-of-acre/blob/main/HISTORICAL_NOTES.md" target="_blank" rel="noopener noreferrer">Read the historical sources ↗</a>
+          </details>
         </div>
         <div class="build-id">
           <span>HISTORICAL STEALTH MAP // ACRE 1250 CE</span>
@@ -245,8 +258,14 @@
         <div>
           <span class="kicker">THE CITY WAITS</span>
           <h2>PAUSED</h2>
-          <p>Resume when you are ready to move.</p>
+          <p id="pause-copy">Take your time. The watch is paused.</p>
+          <div class="comfort-settings">
+            <label>Brightness <input type="range" data-setting="brightness" min="0.8" max="1.5" step="0.05" value="1.08" /></label>
+            <label>Mouse sensitivity <input type="range" data-setting="sensitivity" min="0.4" max="2" step="0.1" value="1" /></label>
+            <label><input type="checkbox" data-setting="reducedMotion" /> Reduce camera motion</label>
+          </div>
           <button id="resume-button">RETURN TO ACRE</button>
+          <button id="new-route-button" class="secondary-button">CHOOSE ANOTHER ROUTE</button>
         </div>
       </section>
 

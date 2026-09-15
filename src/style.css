@@ -275,25 +275,6 @@ button:focus-visible, summary:focus-visible, a:focus-visible { outline:2px solid
 .meter i { display: block; height: 100%; width: 100%; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); transition: width .25s, background .25s; }
 #noise-bar { width: 4%; }
 #noise-state { min-width: 72px; font-size: 20px; letter-spacing: .06em; }
-.moon-panel {
-  display: flex; align-items: center; gap: 11px; width: 260px;
-  padding: 5px 8px; color: #72849b; background: #07101c99;
-  border-left: 1px solid #6689b566; transition: border-color .25s, background .25s;
-}
-.moon-icon {
-  width: 26px; color: #83a5d5; font: 700 24px Georgia, serif;
-  text-align: center; text-shadow: 0 0 12px #8fb9ff66;
-}
-.moon-panel .meter-copy { font-size: 8px; }
-.moon-meter { background: #283648aa; }
-#moon-bar {
-  width: 0; background: #7ba5db;
-  box-shadow: 0 0 12px #8ab8ff; transition: width .25s, background .25s;
-}
-#moon-state { min-width: 73px; color: #8293a8; font-size: 10px; letter-spacing: .12em; text-align: right; }
-.moon-panel.dappled { border-left-color: #8cb0daaa; background: #10192aaa; }
-.moon-panel.exposed { border-left-color: #b9d5ff; background: #14233dcc; }
-.moon-panel.exposed .moon-icon, .moon-panel.exposed #moon-state { color: #d8e7ff; }
 .breath-panel {
   display: flex; align-items: center; gap: 11px; width: 260px;
   padding: 5px 8px; color: #70aeba; background: #061923c7;
@@ -486,7 +467,6 @@ button:hover { transform:translateY(-2px); filter:brightness(1.15); }
   #compass { top:75px; } #bottom-hud { padding:18px 16px; }
   .health-panel { min-width:150px; } .health-panel .icon { display:none; }
   .stealth-panels { max-width: 56vw; }
-  .moon-panel { width: min(220px, 56vw); }
   #start-screen { overflow-y:auto; flex-direction:column; padding:30px 6vw 75px; }
   .brand { position:relative; left:auto; top:auto; } .brand h1 { font-size:54px; }
   .briefing-card { position:relative; left:auto; right:auto; bottom:auto; width:100%; max-height:none; margin-top:20px; flex-shrink:0; }

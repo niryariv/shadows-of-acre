@@ -149,6 +149,11 @@ original; reference photographs and manuscript pages are not game assets.
   uses varied appearances without assigning religion, language or origin from
   skin colour or dress. A full representation of Acre's many communities is
   beyond these small shared character models.
+  The revised figures use anatomical cross-sections, sculpted facial relief,
+  original skin/eye/stubble textures, fitted shoulder lines and articulated
+  limbs. Their individual faces and body proportions are invented, not
+  archaeological likenesses. Clothing and equipment retain the same documented
+  period comparisons; additional mesh detail is not additional historical proof.
 - **Ships.** Kahanov and Stern's *Ship Graffiti from Akko (Acre)*, *Mariner's Mirror*
   94 (2008), pp. 21–35, concerns local ship depictions. For a readable scholarly
   discussion of Mediterranean versus northern rigs, see [Zwick's dissertation](https://macau.uni-kiel.de/servlets/MCRFileNodeServlet/dissertation_derivate_00006964/Diss_Zwick2017.pdf),

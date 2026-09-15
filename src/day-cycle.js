@@ -43,6 +43,13 @@ export function hearingScale(cycle, crowdMask = 0) {
   return (1.15 - cycle.activity * 0.4) * (1 - clamp(crowdMask) * 0.28);
 }
 
+// Ambient day/night visibility, never direct sun or a shadow-map sample.
+// Facing, distance and solid line of sight are checked independently by guards.
+export function sightConditions(cycle) {
+  const daylight = clamp(cycle.daylight);
+  return { range: 1 + daylight * 0.7, recognition: 1.1 + daylight * 0.45 };
+}
+
 export function canRest({ inWater, compromised, phase }) {
   return !inWater && !compromised && (phase === "running" || phase === "paused");
 }

@@ -59,8 +59,9 @@ sound along accessible lanes; intervening stone muffles their hearing.
 Brightness, mouse sensitivity and reduced camera motion are available in the
 opening screen and pause menu. Preferences are saved on the device. Returning
 from a pause clears held controls so the player cannot drift into danger.
-The **Sun / Moon Exposure** meter follows the active light source. Open ground
-makes trespassers easier to see; buildings, walls and the Templar tunnel provide shelter.
+Guard sight depends on distance, facing, posture and solid line of sight. Sunlit
+and shaded ground have the same visibility; a cast shadow is not cover. Night
+reduces sight range, while walls and the Templar tunnel can actually conceal you.
 
 ## Day, night and rest
 
@@ -125,8 +126,12 @@ Historical design notes and sources are in
 ## Visual detail
 
 Houses have dressed stone corners, stone-built arches and deeper window frames.
-Guards and citizens use folded garments, detailed mail, period-informed headwear
-and visible faces and hands. Ships have rounded hulls, laid decks, rope rigging
+Guards and citizens use shaped jaws and faces with original skin textures,
+tailored shoulders and clothing, period-informed headwear, and modelled hands.
+Two-link knee and elbow animation replaces rigid swinging limbs; feet lift during
+each stride, and guards carry their shields and spears with bent, supporting arms.
+These remain original stylized reconstructions, not photorealistic scanned people.
+Ships have rounded hulls, laid decks, rope rigging
 and fore-and-aft lateen sails; market goods include open eating and glazed bowls.
 Historical evidence and reconstruction limits are documented in the notes above.
 

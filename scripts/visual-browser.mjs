@@ -24,7 +24,9 @@ try {
   assert.equal(initial.quality.textureResolution,2048);
   assert.ok(initial.surfaceTextures.every(t=>t.width===2048));
   assert.equal(initial.quality.shadowResolution,2048);
-  assert.ok(initial.guardModel.triangles>5500&&initial.guardModel.triangles<10000);
+  assert.ok(initial.guardModel.triangles>15000&&initial.guardModel.triangles<22000);
+  assert.ok(initial.guardModel.meshDraws<=26);
+  assert.equal(await page.locator('#moon-panel, #moon-bar, #light-label').count(),0);
   assert.equal(initial.vessels.merchantVessel.draws,4);
   assert.ok(initial.civilians.draws<=13);
   const shots=[['street',[9,-24,0],600],['port',[48,64,-Math.PI/2],600],
@@ -38,6 +40,12 @@ try {
     window.__acreDebug.teleport(g.position[0]+Math.sin(g.yaw)*2.6,g.position[2]+Math.cos(g.yaw)*2.6,g.yaw,g.position[1]);});
   await page.waitForTimeout(300);
   await page.screenshot({path:join(tmpdir(),'acre-detail-guard.jpg'),type:'jpeg',quality:88});
+  for(const i of [3,4]){
+    await page.evaluate(index=>{const p=window.__acreDebug.civilians()[index];
+      window.__acreDebug.teleport(p.x+Math.sin(p.yaw)*2.1,p.z+Math.cos(p.yaw)*2.1,p.yaw,0,-.18);},i);
+    await page.waitForTimeout(100);
+    await page.screenshot({path:join(tmpdir(),`acre-citizen-${i}.jpg`),type:'jpeg',quality:88});
+  }
   await page.evaluate(()=>window.__acreDebug.teleport(9,-24,0));
   await page.waitForTimeout(7000);
   console.log('Desktop render sample:',await page.evaluate(()=>document.documentElement.dataset.renderStats));

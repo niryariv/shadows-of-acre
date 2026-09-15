@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {timeOfDay, accessAt, hearingScale, canRest, MINUTES_PER_REAL_SECOND} from "../src/day-cycle.js";
+import {timeOfDay, accessAt, hearingScale, sightConditions, canRest, MINUTES_PER_REAL_SECOND} from "../src/day-cycle.js";
 
 assert.equal(MINUTES_PER_REAL_SECOND*90,60);
 assert.equal(timeOfDay(359.99).night,true);
@@ -13,6 +13,11 @@ const day=timeOfDay(720),night=timeOfDay(1200);
 assert.ok(day.daylight>night.daylight);
 assert.ok(day.population>night.population);
 assert.ok(hearingScale(day,1)<hearingScale(night,0));
+assert.deepEqual(sightConditions({...day,sunlit:true}),sightConditions({...day,sunlit:false}),"Shade is not concealment");
+assert.deepEqual(sightConditions({...night,moonExposure:1}),sightConditions({...night,moonExposure:0}),"No moonlight hiding bonus");
+assert.ok(sightConditions(day).range>sightConditions(night).range,"Night still limits sight range");
+assert.equal(sightConditions(day).range,1.7);
+assert.equal(sightConditions(day).recognition,1.55);
 assert.equal(accessAt({x:9,z:0},day).suspicious,false);
 assert.equal(accessAt({x:9,z:0},night).suspicious,true);
 assert.equal(accessAt({x:-30,z:-41},day).suspicious,true);

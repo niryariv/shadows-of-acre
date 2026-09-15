@@ -20,6 +20,26 @@ const start=async(mode="explore",time="600")=>{
 };
 try {
   await start();
+  assert.equal(await page.locator('#moon-panel, #moon-bar, #light-label').count(),0);
+  const sightChecks=await page.evaluate(()=>{
+    const d=window.__acreDebug,found={sun:null,shade:null,wall:null};
+    for(let x=-86;x<82;x+=4)for(let z=-74;z<66;z+=4){
+      if(d.blockedAt(x,z))continue;
+      for(const [dx,dz] of [[4,0],[0,4],[-4,0],[0,-4]]){
+        if(d.blockedAt(x+dx,z+dz))continue;
+        const result=d.sightProbe([x,z],[x+dx,z+dz],600);
+        if(result.visible)found[result.sunlit?'sun':'shade']||=result;
+        else found.wall||=result;
+      }
+      if(Object.values(found).every(Boolean))return found;
+    }
+    return found;
+  });
+  assert.ok(sightChecks.sun?.visible&&sightChecks.shade?.visible,'Guards see targets in sun AND shade with open line of sight');
+  assert.equal(sightChecks.sun.range,sightChecks.shade.range);
+  assert.equal(sightChecks.sun.recognition,sightChecks.shade.recognition);
+  assert.equal(sightChecks.wall?.visible,false,'Solid masonry still blocks nearby sight');
+  console.log('Passed: no exposure HUD, identical sun/shade visibility, solid cover blocks sight');
   await teleport(9,-24);
   await page.waitForTimeout(1800);
   assert.equal((await state()).cycle.population,32);

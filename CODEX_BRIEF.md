@@ -17,7 +17,7 @@ browser stealth experience realistic for this repository and execution window.
   right-button crouch, keyboard alternatives, interact, map, audio, and pause.
   The page must explain controls before pointer lock.
 - The player is completely unarmed. There are no combat mechanics; route
-  planning, patience, shadows, and quiet movement are the only tools.
+  planning, patience, solid cover, and quiet movement are the only tools.
 - Guards that patrol, see, hear, grow suspicious, investigate disturbances,
   and communicate awareness through readable sight cones.
 - A day–night cycle: public daytime walking is tolerated; military interiors

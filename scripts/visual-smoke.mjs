@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { voussoirArch, foldedGarment, merchantHull, createCrowdModels, potteryDisplay } from '../src/visual-detail.js';
+import { anatomicalHead, tailoredTunic, tailoredLimb, walkingPose } from '../src/character-models.js';
 
 const noop=()=>{};
 const context=new Proxy({},{get:()=>noop,set:()=>true});
@@ -21,6 +22,12 @@ const bottom=12*17+8;
 assert.ok(hull.attributes.normal.getY(bottom)<-.95,'Outer hull faces the water');
 assert.ok(hull.attributes.normal.getY(bottom+25*17)>.95,'Inner hull faces the hold');
 const garment=foldedGarment();finite(garment);assert.ok(triangles(garment)>=1000);
+for(const geometry of [anatomicalHead(),tailoredTunic(),tailoredTunic(true),tailoredLimb(),tailoredLimb(true)])finite(geometry);
+for(let phase=0;phase<Math.PI*2;phase+=.1)for(const leg of walkingPose(phase,1).legs){
+  assert.ok(Math.abs(new THREE.Vector3(...leg.hip).distanceTo(new THREE.Vector3(...leg.knee))-.415)<1e-6,"Fixed thigh length");
+  assert.ok(Math.abs(new THREE.Vector3(...leg.knee).distanceTo(new THREE.Vector3(...leg.foot))-.415)<1e-6,"Fixed shin length");
+  assert.ok(leg.foot[1]>=.095,"Foot never penetrates road");
+}
 const root=new THREE.Group(),crowd=createCrowdModels(root);
 crowd.begin(3,true);
 crowd.draw(0,{x:0,z:0,yaw:0},0,3);

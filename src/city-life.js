@@ -53,7 +53,8 @@ export function createCityLife(THREE, scene, arena, navigation) {
           p.x=x;p.z=z;p.yaw=Math.atan2(dx,dz);moving=true;
         }
       }
-      p.phase+=moving?dt*6:0;
+      p.moving=moving;
+      p.phase+=moving?dt*p.speed*6.2:0;
       const gait=moving?Math.sin(p.phase)*0.3:0;
       crowd.draw(i,p,gait,Math.hypot(p.x-player.position.x,p.z-player.position.z));
     }
@@ -62,6 +63,7 @@ export function createCityLife(THREE, scene, arena, navigation) {
   return {
     gateBox,
     modelBudget: crowd.budget,
+    snapshots: () => people.slice(0,population).map(({x,z,yaw,phase,moving})=>({x,z,yaw,phase,moving})),
     get closed() { return gateBox.enabled; },
     get population() { return population; },
     setClosed(closed, occupants) {

@@ -11,8 +11,9 @@ import { StealthAudio } from "./audio.js";
 import { createNavigator, routeLength } from "./navigation.js";
 import { createCartographer } from "./cartography.js";
 import { HISTORIC_STOPS, SETTING_NOTE } from "./history.js";
-import { DEFAULT_TIME, MINUTES_PER_REAL_SECOND, timeOfDay, accessAt, hearingScale, canRest } from "./day-cycle.js";
-import { foldedGarment, loomTexture, combine } from "./visual-detail.js";
+import { DEFAULT_TIME, MINUTES_PER_REAL_SECOND, timeOfDay, accessAt, hearingScale, sightConditions, canRest } from "./day-cycle.js";
+import { loomTexture } from "./visual-detail.js";
+import { createGuardFigure } from "./character-models.js";
 import { createCityLife } from "./city-life.js";
 
 const $ = (id) => document.getElementById(id);
@@ -376,9 +377,6 @@ const game = {
   entryRoute: arena.entryRoutes[0],
   enteredCity: true,
   inTunnel: false,
-  moonExposure: 0.2,
-  targetMoonExposure: 1,
-  moonlit: true,
   compromised: false,
   mode: "stealth",
   explorationAlerts: 0,
@@ -455,6 +453,20 @@ if (import.meta.env.DEV) {
       player.velocity.set(0, 0, 0);
       player.yaw = yaw;
       player.pitch = THREE.MathUtils.clamp(pitch, -1.45, 1.45);
+    },
+    civilians() { return cityLife.snapshots(); },
+    sightProbe(from, to, minutes = game.worldMinutes) {
+      const root = new THREE.Object3D();
+      root.position.set(from[0], 0, from[1]);
+      root.lookAt(to[0], 0, to[1]);
+      const point = new THREE.Vector3(to[0], 1.65, to[1]);
+      const conditions = sightConditions(timeOfDay(minutes));
+      return {
+        visible: guardCanSee({ root }, point, 15 * conditions.range),
+        // Diagnostic only; this sample never enters gameplay perception.
+        sunlit: nearestWallHit(point, sunDirection) > 72,
+        ...conditions,
+      };
     },
     stats() {
       return {
@@ -641,125 +653,7 @@ const mergeParts = (parts) => mergeGeometries(
     transformedGeometry(geometry, position, rotation, scale)),
   false,
 );
-const eyeParts = [-1, 1].flatMap((side) => [
-  {
-    geometry: new THREE.SphereGeometry(0.010, 10, 8),
-    position: [side * 0.065, 0.02, 0.279],
-  },
-  {
-    geometry: new THREE.BoxGeometry(0.050, 0.008, 0.009),
-    position: [side * 0.065, 0.071, 0.273],
-    rotation: [0, 0, side * -0.08],
-  },
-]);
 const guardGeometries = {
-  torsoArmor: mergeParts([
-    {
-      geometry: new THREE.CapsuleGeometry(0.29, 0.42, 6, 12),
-      position: [0, 0.16, 0],
-    },
-    {
-      geometry: new THREE.CylinderGeometry(0.31, 0.39, 0.58, 12),
-      position: [0, -0.19, 0],
-    },
-  ]),
-  surcoat: foldedGarment(.34, .29, .36, 1.02),
-  belt: new THREE.TorusGeometry(.30,.032,6,32).rotateX(Math.PI/2).scale(1,1,.74),
-  beltBuckle: new THREE.BoxGeometry(0.11, 0.13, 0.035),
-  surcoatHeraldry: mergeParts([
-    {
-      geometry: new THREE.BoxGeometry(0.09, 0.48, 0.035),
-      position: [0, 0.18, 0.231],
-    },
-    {
-      geometry: new THREE.BoxGeometry(0.34, 0.085, 0.04),
-      position: [0, 0.26, 0.237],
-    },
-  ]),
-  headSkin: mergeParts([
-    {
-      geometry: new THREE.SphereGeometry(0.19, 32, 24),
-      position: [0, -0.02, 0.105],
-      scale: [0.9, 1.08, 0.9],
-    },
-    {
-      geometry: new THREE.SphereGeometry(0.026, 12, 10),
-      position: [0, -0.022, 0.275],
-      scale: [1, 1.8, 1.2],
-    },
-    {
-      geometry: new THREE.SphereGeometry(0.043, 6, 4),
-      position: [-0.18, -0.02, 0.09],
-      scale: [0.55, 1, 0.55],
-    },
-    {
-      geometry: new THREE.SphereGeometry(0.043, 6, 4),
-      position: [0.18, -0.02, 0.09],
-      scale: [0.55, 1, 0.55],
-    },
-  ]),
-  faceBare: mergeParts(eyeParts),
-  faceBearded: mergeParts([
-    ...eyeParts,
-    {
-      geometry: new THREE.SphereGeometry(.181, 28, 12, 0, Math.PI*2, Math.PI*.60, Math.PI*.40),
-      position: [0, -.017, .114],
-      scale: [.89, 1.02, .97],
-    },
-  ]),
-  coif: new THREE.SphereGeometry(0.235, 28, 20),
-  kettleHelmet: combine([
-    {geometry:new THREE.SphereGeometry(.255,28,16,0,Math.PI*2,0,Math.PI/2),position:[0,.08,0],scale:[1,.78,1]},
-    {geometry:new THREE.CylinderGeometry(.34,.37,.048,32),position:[0,.085,0]},
-    ...Array.from({length:12},(_,i)=>({geometry:new THREE.SphereGeometry(.014,6,4),position:[Math.sin(i*Math.PI/6)*.254,.10,Math.cos(i*Math.PI/6)*.254]})),
-  ]),
-  helmetIron: mergeParts([
-    {
-      geometry: new THREE.SphereGeometry(.255,28,16,0,Math.PI*2,0,Math.PI/2).scale(1,.85,1),
-      position: [0, 0.09, 0],
-    },
-    {
-      geometry: new THREE.CylinderGeometry(0.29, 0.29, 0.05, 16),
-      position: [0, 0.09, 0],
-    },
-    {
-      geometry: new THREE.BoxGeometry(0.038, 0.25, 0.045),
-      position: [0, -0.03, 0.245],
-    },
-    {
-      geometry: new THREE.BoxGeometry(0.05, 0.2, 0.035),
-      position: [-0.19, -0.015, 0.15],
-      rotation: [0, 0, -0.12],
-    },
-    {
-      geometry: new THREE.BoxGeometry(0.05, 0.2, 0.035),
-      position: [0.19, -0.015, 0.15],
-      rotation: [0, 0, 0.12],
-    },
-  ]),
-  leg: new THREE.CapsuleGeometry(0.105, 0.5, 5, 10),
-  boot: new THREE.SphereGeometry(.12, 16, 10).scale(.87,.72,1.5),
-  arm: new THREE.CapsuleGeometry(0.085, 0.46, 5, 10),
-  spearShaft: new THREE.CylinderGeometry(0.025, 0.035, 2.6, 8),
-  spearPoint: new THREE.ConeGeometry(0.09, 0.32, 8),
-  shield: new THREE.ExtrudeGeometry(guardShieldShape, {
-    depth: 0.055,
-    bevelEnabled: true,
-    bevelSize: 0.025,
-    bevelThickness: 0.018,
-    bevelSegments: 2,
-  }),
-  shieldHeraldry: mergeParts([
-    {
-      geometry: new THREE.BoxGeometry(0.075, 0.64, 0.025),
-      position: [0, 0.09, 0.085],
-    },
-    {
-      geometry: new THREE.BoxGeometry(0.34, 0.07, 0.025),
-      position: [0, 0.17, 0.087],
-    },
-  ]),
-  shieldBoss: new THREE.SphereGeometry(0.105, 8, 5),
   farBody: mergeParts([
     {
       geometry: new THREE.CapsuleGeometry(0.3, 0.58, 3, 6),
@@ -886,11 +780,6 @@ const guardMaterials = {
     bumpScale: 0.018,
     roughness: 0.88,
   }),
-  skin: new THREE.MeshStandardMaterial({ color: 0x9b6f50, roughness: 0.92 }),
-  hair: new THREE.MeshStandardMaterial({
-    color: 0x26170f,
-    roughness: 1,
-  }),
   iron: new THREE.MeshStandardMaterial({
     color: 0x747a78,
     metalness: 0.78,
@@ -903,104 +792,11 @@ function createGuard(index, position, options = {}) {
   root.position.copy(position);
 
   const order = guardOrderDefinitions[options.orderId] || guardOrderDefinitions.garrison;
-  const orderMaterials = guardMaterials.orders[order.id];
-  const chainmail = guardMaterials.chainmail;
-  const cloth = orderMaterials.cloth;
-  const leggings = guardMaterials.leggings[index % guardMaterials.leggings.length];
-  const { leather, skin, hair, iron } = guardMaterials;
-  const heraldry = orderMaterials.heraldry;
+  const cloth = guardMaterials.orders[order.id].cloth;
   root.name = `${order.shortName} patrol guard`;
-
-  const torso = new THREE.Group();
-  torso.position.y = 1.1;
-  torso.name = "Guard torso pivot";
-  const body = new THREE.Mesh(guardGeometries.torsoArmor, chainmail);
-  body.name = "Merged mail hauberk and skirt";
-  body.scale.set(.93,1,.66);
-  const surcoat = new THREE.Mesh(guardGeometries.surcoat, cloth);
-  surcoat.position.set(0, 0.02, 0.015);
-  surcoat.name = "Wool guard surcoat";
-  const belt = new THREE.Mesh(guardGeometries.belt, leather);
-  belt.position.set(0, -0.07, 0);
-  belt.name = "Guard leather belt";
-  const beltBuckle = new THREE.Mesh(guardGeometries.beltBuckle, iron);
-  beltBuckle.position.set(0, -0.07, 0.255);
-  beltBuckle.name = "Guard belt buckle";
-  const surcoatHeraldry = new THREE.Mesh(guardGeometries.surcoatHeraldry, heraldry);
-  surcoatHeraldry.name = "Merged surcoat cross";
-  surcoatHeraldry.visible = order.showCross;
-  torso.add(body, surcoat, belt, beltBuckle, surcoatHeraldry);
-
-  const headGroup = new THREE.Group();
-  headGroup.position.y = 1.84;
-  headGroup.scale.setScalar(.88);
-  headGroup.name = "Guard head pivot";
-  const head = new THREE.Mesh(guardGeometries.headSkin, skin);
-  head.name = "Guard face with ears and nose";
-  const coif = new THREE.Mesh(guardGeometries.coif, chainmail);
-  coif.scale.set(1, 1.16, 0.94);
-  coif.position.z = -0.025;
-  coif.name = "Chainmail coif";
-  const helmet = new THREE.Mesh(index % 3 === 0 ? guardGeometries.kettleHelmet : guardGeometries.helmetIron, iron);
-  helmet.name = index % 3 === 0 ? "Riveted iron kettle hat" : "Rounded iron cap with nasal guard";
-  const faceDetails = new THREE.Mesh(
-    index % 3 === 1 ? guardGeometries.faceBare : guardGeometries.faceBearded,
-    hair,
-  );
-  faceDetails.name = index % 3 === 1
-    ? "Guard eyes and brows"
-    : "Guard eyes, brows, and beard";
-  headGroup.add(head, coif, helmet, faceDetails);
-
-  const legs = [-1, 1].map((side) => {
-    const legPivot = new THREE.Group();
-    legPivot.position.set(side * 0.19, 0.82, 0);
-    legPivot.name = "Guard hip pivot";
-    const leg = new THREE.Mesh(guardGeometries.leg, leggings);
-    leg.position.y = -0.29;
-    const boot = new THREE.Mesh(guardGeometries.boot, leather);
-    boot.position.set(0, -0.69, 0.08);
-    boot.name = "Guard leather boot";
-    legPivot.add(leg, boot);
-    return legPivot;
-  });
-  const arms = [-1, 1].map((side) => {
-    const armPivot = new THREE.Group();
-    armPivot.position.set(side * 0.39, 1.48, 0.03);
-    armPivot.rotation.z = side * -0.1;
-    armPivot.name = "Guard shoulder pivot";
-    const arm = new THREE.Mesh(guardGeometries.arm, chainmail);
-    arm.position.y = -0.25;
-    armPivot.add(arm);
-    return armPivot;
-  });
-  const spear = new THREE.Group();
-  const shaft = new THREE.Mesh(guardGeometries.spearShaft, leather);
-  shaft.name = "Ash spear shaft";
-  const point = new THREE.Mesh(guardGeometries.spearPoint, iron);
-  point.position.y = 1.45;
-  point.name = "Forged spear point";
-  spear.add(shaft, point);
-  spear.position.set(0.09, -0.33, 0.17);
-  spear.rotation.z = -0.16;
-  spear.name = "Guard spear";
-  arms[1].add(spear);
-
-  const shieldAssembly = new THREE.Group();
-  shieldAssembly.position.set(-0.03, -0.26, 0.24);
-  shieldAssembly.name = "Guard shield assembly";
-  const shield = new THREE.Mesh(guardGeometries.shield, cloth);
-  shield.name = "Curved mid-thirteenth-century heater shield";
-  const shieldHeraldry = new THREE.Mesh(guardGeometries.shieldHeraldry, heraldry);
-  shieldHeraldry.name = "Merged shield cross";
-  shieldHeraldry.visible = order.showCross;
-  const shieldBoss = new THREE.Mesh(guardGeometries.shieldBoss, iron);
-  shieldBoss.position.set(0, 0.02, 0.115);
-  shieldBoss.scale.z = 0.45;
-  shieldBoss.name = "Forged shield boss";
-  shieldAssembly.add(shield, shieldHeraldry);
-  shieldHeraldry.scale.set(.9,.8,1);
-  arms[0].add(shieldAssembly);
+  const figure = createGuardFigure(index, order, guardMaterials);
+  const {body:torso, head:headGroup, legs, arms} = figure;
+  const detailRoot = figure.root;
 
   const coneMaterial = new THREE.MeshBasicMaterial({
     color: 0xff3d25,
@@ -1012,47 +808,17 @@ function createGuard(index, position, options = {}) {
   });
   const visionCone = new THREE.Mesh(guardGeometries.vision, coneMaterial);
 
-  const detailRoot = new THREE.Group();
-  detailRoot.name = "Guard full-detail model";
-  detailRoot.scale.set(.82,.9,.82);
-  detailRoot.add(
-    torso,
-    headGroup,
-    ...legs,
-    ...arms,
-  );
   const farBody = new THREE.Mesh(
     guardGeometries.farBody,
     cloth,
   );
   farBody.name = "Guard distance silhouette";
   farBody.position.y = 0;
-  farBody.scale.copy(detailRoot.scale);
+  farBody.scale.set(.63,.89,.63);
   farBody.visible = false;
   farBody.castShadow = true;
   farBody.receiveShadow = true;
-  const principalShadowCasters = new Set([
-    body,
-    surcoat,
-    head,
-    coif,
-    helmet,
-    shield,
-  ]);
-  detailRoot.traverse((object) => {
-    if (object.isMesh) {
-      object.castShadow = principalShadowCasters.has(object);
-      object.receiveShadow = true;
-    }
-  });
-  const modelBudget = { meshDraws: 0, triangles: 0 };
-  detailRoot.traverse((object) => {
-    if (!object.isMesh) return;
-    modelBudget.meshDraws += 1;
-    modelBudget.triangles += object.geometry.index
-      ? object.geometry.index.count / 3
-      : object.geometry.attributes.position.count / 3;
-  });
+  const modelBudget = figure.budget;
   root.add(visionCone, detailRoot, farBody);
   scene.add(root);
 
@@ -1069,6 +835,7 @@ function createGuard(index, position, options = {}) {
     visionCone,
     coneMaterial,
     modelBudget,
+    animate: figure.animate,
     home: root.position.clone(),
     target: root.position.clone(),
     lastSeen: root.position.clone(),
@@ -1414,30 +1181,6 @@ function clearLineOfSight(from, to) {
   const distance = direction.length();
   direction.normalize();
   return nearestWallHit(from, direction) >= distance - 0.35;
-}
-
-const moonProbeOrigin = new THREE.Vector3();
-let moonCheckElapsed = Infinity;
-function updateMoonExposure(dt) {
-  moonCheckElapsed += dt;
-  if (moonCheckElapsed >= 0.18) {
-    if (game.inTunnel || player.submerged) {
-      game.targetMoonExposure = 0;
-    } else {
-      moonProbeOrigin.copy(player.position);
-      moonProbeOrigin.y += 0.12;
-      const moonClearance = nearestWallHit(moonProbeOrigin, lightDirection);
-      game.targetMoonExposure = moonClearance > 72 ? 1 : 0.08;
-    }
-    game.moonlit = game.targetMoonExposure > 0.5;
-    moonCheckElapsed = 0;
-  }
-  game.moonExposure = THREE.MathUtils.damp(
-    game.moonExposure,
-    game.targetMoonExposure,
-    5.5,
-    dt,
-  );
 }
 
 function boxCollides(position) {
@@ -1828,7 +1571,7 @@ function updateGuards(dt) {
     guard.farBody.visible = !fullDetail;
     const suspicious = access.suspicious || game.elapsed < guard.identifiedUntil;
     guard.visionCone.visible = distance < 34 && suspicious;
-    const moonVisibility = 0.62 + game.moonExposure * 0.38;
+    const sight = sightConditions(cycle);
     const sightRange = player.inWater
       ? 9
       : player.crouched
@@ -1842,7 +1585,7 @@ function updateGuards(dt) {
       guardCanSee(
         guard,
         player.position,
-        sightRange * moonVisibility * (1 + cycle.daylight * 0.7),
+        sightRange * sight.range,
         66,
       );
     const ear = guard.root.position.clone().add(new THREE.Vector3(0, 1.55, 0));
@@ -1879,8 +1622,7 @@ function updateGuards(dt) {
           : player.noise > 70
             ? 1.35
             : 1;
-      const illumination = 0.48 + game.moonExposure * 0.62 + cycle.daylight * 0.45;
-      guard.awareness += dt * 48 * proximity * posture * illumination;
+      guard.awareness += dt * 48 * proximity * posture * sight.recognition;
       guard.state = "suspicious";
     } else {
       guard.awareness = Math.max(0, guard.awareness - dt * 18);
@@ -1985,20 +1727,7 @@ function updateGuards(dt) {
     }
 
     const movement = Math.min(guard.root.position.distanceTo(old) / Math.max(dt, .001), 1);
-    const gait = Math.sin(guard.phase * 7.5) * movement;
-    guard.detailRoot.position.y =
-      Math.abs(gait) * 0.022 + Math.sin(guard.phase * 1.15) * 0.004;
-    guard.body.rotation.z = gait * 0.018;
-    guard.body.rotation.x = guard.state === "patrol" ? 0 : -0.025;
-    guard.legs[0].rotation.x = gait * 0.34;
-    guard.legs[1].rotation.x = -gait * 0.34;
-    // The equipment-bearing arms move less than a free walking swing, keeping
-    // the heater shield braced and the spear upright while still feeling alive.
-    guard.arms[0].rotation.x = -gait * 0.075;
-    guard.arms[1].rotation.x = gait * 0.065;
-    guard.head.rotation.y =
-      Math.sin(guard.phase * 1.1) * (guard.state === "patrol" ? 0.085 : 0.035);
-    guard.head.rotation.z = Math.sin(guard.phase * 0.74) * 0.012;
+    guard.animate(guard.phase * 7.5, movement, guard.state !== "patrol");
     guard.coneMaterial.opacity = 0.035 + (guard.awareness / 100) * 0.13;
     guard.coneMaterial.color.setHex(guard.awareness > 55 ? 0xff281b : 0xff8a25);
 
@@ -2501,16 +2230,6 @@ function updateHUD() {
         ? "LOW AIR"
         : "SUBMERGED"
       : "HEAD VISIBLE";
-  const moonExposure = THREE.MathUtils.clamp(game.moonExposure, 0, 1);
-  $("moon-bar").style.width = `${Math.max(2, moonExposure * 100)}%`;
-  $("moon-bar").style.background =
-    moonExposure > 0.7 ? "#c4dcff" : moonExposure > 0.3 ? "#86addd" : "#496786";
-  const moonState = moonExposure > 0.7 ? (cycle.daylight>.5?"SUNLIT":"MOONLIT") : moonExposure > 0.3 ? "DAPPLED" : "SHELTERED";
-  $("light-label").textContent = cycle.daylight>.5 ? "SUN EXPOSURE" : "MOON EXPOSURE";
-  $("moon-state").textContent = moonState;
-  $("moon-panel").classList.toggle("exposed", moonExposure > 0.7);
-  $("moon-panel").classList.toggle("dappled", moonExposure > 0.3 && moonExposure <= 0.7);
-
   const degrees = THREE.MathUtils.euclideanModulo(-THREE.MathUtils.radToDeg(player.yaw), 360);
   const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
   const cardinal = directions[Math.round(degrees / 45) % 8];
@@ -3160,7 +2879,6 @@ function animate() {
     updatePlayer(dt);
     cityLife.update(dt,cycle,player,game.inTunnel);
     audio.cityAmbience(dt,cycle.activity,cityLife.crowdMask(player.position),game.inTunnel||player.submerged);
-    updateMoonExposure(dt);
     updateGuards(dt);
     if (game.phase === "running") updateMission(dt);
     hudElapsed += dt;

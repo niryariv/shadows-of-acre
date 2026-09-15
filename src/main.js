@@ -480,7 +480,7 @@ if (import.meta.env.DEV) {
         detection: game.detection,
         worldMinutes: game.worldMinutes,
         cycle: {...cycle, gateClosed:cityLife.closed, population:cityLife.population},
-        access: accessAt(player.position,cycle,game.inTunnel),
+        access: accessAt(player.position,cycle,game.inTunnel,player.inWater),
         guidance: { label: guidance.label, path: guidance.path, goal: guidance.goal },
         wallGuards: guards
           .filter((guard) => guard.wallPatrol)
@@ -1810,7 +1810,7 @@ function updateGuards(dt) {
   }
 
   let mostAware = null;
-  const access = accessAt(player.position, cycle, game.inTunnel);
+  const access = accessAt(player.position, cycle, game.inTunnel, player.inWater);
   const crowdMask = cityLife.crowdMask(player.position);
   const soundScale = hearingScale(cycle, crowdMask);
   for (const guard of guards) {
@@ -2524,7 +2524,7 @@ function updateHUD() {
   $("waypoint-distance").textContent = guidance.path ? `${Math.round(routeLength(guidance.path))} PACES · VIA LANES` : "CHECK YOUR MAP";
   $("waypoint").classList.toggle("close", routeLength(guidance.path) < 4);
   $("map-objective").textContent = guidance.label;
-  $("watch-state").textContent = game.detection > 65 ? "YOU ARE BEING IDENTIFIED · BREAK SIGHT" : game.detection > 35 ? "WATCH IS SEARCHING · FIND COVER" : game.detection > 10 ? "SOMETHING WAS NOTICED" : accessAt(player.position,cycle,game.inTunnel).label;
+  $("watch-state").textContent = game.detection > 65 ? "YOU ARE BEING IDENTIFIED · BREAK SIGHT" : game.detection > 35 ? "WATCH IS SEARCHING · FIND COVER" : game.detection > 10 ? "SOMETHING WAS NOTICED" : accessAt(player.position,cycle,game.inTunnel,player.inWater).label;
   $("watch-state").classList.toggle("danger", game.detection > 65);
   const firstMinute = game.missionTime < 24;
   $("travel-hint").classList.toggle("hidden", !firstMinute || game.detection > 35);

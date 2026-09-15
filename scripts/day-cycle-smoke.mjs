@@ -18,6 +18,8 @@ assert.equal(accessAt({x:9,z:0},night).suspicious,true);
 assert.equal(accessAt({x:-30,z:-41},day).suspicious,true);
 assert.equal(accessAt({x:-70,z:60},day).suspicious,true);
 assert.equal(accessAt({x:122,z:-71},night).suspicious,false);
+assert.equal(accessAt({x:-107,z:-11},night,false,true).suspicious,true);
+assert.equal(accessAt({x:-107,z:-11},day,false,true).suspicious,false);
 assert.equal(accessAt({x:-30,z:50},night,true).suspicious,false);
 assert.equal(canRest({phase:"running",inWater:false,compromised:false}),true);
 assert.equal(canRest({phase:"paused",inWater:false,compromised:false}),true);

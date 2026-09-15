@@ -67,6 +67,17 @@ try {
   await page.screenshot({path:join(tmpdir(),"acre-rest.jpg"),type:"jpeg",quality:80});
   console.log("Passed: night population, fixed stars, pause, 24-hour rest rollover");
 
+  await start("explore","1200");
+  await teleport(-107,-11,-Math.PI/2);
+  await page.waitForFunction(()=>document.documentElement.dataset.inWater==="true");
+  assert.equal((await state()).access.suspicious,true);
+  await page.mouse.down({button:"right"});
+  await page.waitForFunction(()=>document.documentElement.dataset.submerged==="true");
+  await page.waitForTimeout(500);
+  assert.equal((await state()).detection,0);
+  await page.mouse.up({button:"right"});
+  console.log("Passed: night coastal watch applies outside the city; diving remains concealed");
+
   await start("stealth");
   for(let i=0;i<45;i++) {
     await page.evaluate(()=>{

@@ -28,8 +28,9 @@ export const RESTRICTED_AREAS = [
   { name: "Templar fortress", minX: -89, maxX: -54, minZ: 47, maxZ: 77 },
 ];
 
-export function accessAt(position, cycle, inTunnel = false) {
+export function accessAt(position, cycle, inTunnel = false, inWater = false) {
   if (inTunnel) return { suspicious: false, label: "CONCEALED PASSAGE" };
+  if (cycle.night && inWater) return { suspicious: true, label: "COASTAL WATCH · DIVE TO HIDE" };
   const restricted = RESTRICTED_AREAS.find(area => position.x >= area.minX && position.x <= area.maxX
     && position.z >= area.minZ && position.z <= area.maxZ);
   if (restricted) return { suspicious: true, label: `RESTRICTED · ${restricted.name}` };

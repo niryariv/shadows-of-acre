@@ -5,7 +5,7 @@ export function createNavigator({ colliders, bounds, floorY = 0, radius = 0.47,
   const minX = bounds.min.x, minZ = bounds.min.z;
   const cols = Math.ceil((bounds.max.x - minX) / step) + 1;
   const rows = Math.ceil((bounds.max.z - minZ) / step) + 1;
-  const solids = colliders.filter(box => box.max.y > floorY && box.min.y < floorY + 1.72);
+  const solids = colliders.filter(box => box.enabled !== false && box.max.y > floorY && box.min.y < floorY + 1.72);
   const point = id => ({ x: minX + id % cols * step, z: minZ + Math.floor(id / cols) * step });
   const walkable = (x, z) => x >= minX && x <= bounds.max.x && z >= minZ && z <= bounds.max.z
     && isGround(x, z) && !solids.some(box => x + radius > box.min.x && x - radius < box.max.x

@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test:arena": "node scripts/arena-smoke.mjs",
+    "test:time": "node scripts/day-cycle-smoke.mjs",
+    "test:time-browser": "node scripts/day-cycle-browser.mjs",
     "test:browser": "node scripts/browser-smoke.mjs"
   },
   "dependencies": {

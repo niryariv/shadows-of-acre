@@ -48,6 +48,7 @@ export function buildArena(THREE, scene) {
   const root = new THREE.Group();
   root.name = "Acre, 1250 CE";
   scene.add(root);
+  let daylightAmount = 1;
 
   const objectRenderBudget = {
     entryProps: {
@@ -5522,7 +5523,8 @@ export function buildArena(THREE, scene) {
     flame.userData.animate = (time) => {
       const flicker = 0.82 + Math.sin(time * 8 + x) * 0.18;
       flame.scale.set(0.55 + flicker * 0.09, 0.78 + flicker * 0.18, 1);
-      light.intensity = 6.5 + flicker * 2.8;
+      light.intensity = (6.5 + flicker * 2.8) * (1-daylightAmount*.95);
+      flame.visible = daylightAmount < .8;
     };
     animated.push(flame);
   };
@@ -5831,6 +5833,11 @@ export function buildArena(THREE, scene) {
 
   return {
     colliders,
+    setDaylight(value) {
+      daylightAmount = value;
+      waterMaterial.color.setRGB(0.012+value*.025,0.122+value*.19,0.196+value*.23);
+      birds.visible = value > .12;
+    },
     isDryLand: (x, z) => pointInPolygon([x, z], ACRE_PLAN.cityOutline)
       || pointInPolygon([x, z], ACRE_PLAN.mainland)
       || (x >= 30 && x <= 54 && z >= 61.1 && z <= 66.9),

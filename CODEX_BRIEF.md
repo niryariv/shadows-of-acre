@@ -20,6 +20,9 @@ browser stealth experience realistic for this repository and execution window.
   planning, patience, shadows, and quiet movement are the only tools.
 - Guards that patrol, see, hear, grow suspicious, investigate disturbances,
   and communicate awareness through readable sight cones.
+- A day–night cycle: public daytime walking is tolerated; military interiors
+  remain restricted; the land gate closes at night. Civilian traffic, lighting,
+  and sound masking change with time. R / the pause menu rests exactly one hour.
 - A complete loop: enter through the eastern gate, cross the city, take a
   sealed dispatch from the Hospitaller court, reach a harbour skiff, receive a
   stealth rating, fail on confirmed detection, and restart.

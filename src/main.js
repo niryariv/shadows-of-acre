@@ -11,6 +11,8 @@ import { StealthAudio } from "./audio.js";
 import { createNavigator, routeLength } from "./navigation.js";
 import { createCartographer } from "./cartography.js";
 import { HISTORIC_STOPS, SETTING_NOTE } from "./history.js";
+import { DEFAULT_TIME, MINUTES_PER_REAL_SECOND, timeOfDay, accessAt, hearingScale, canRest } from "./day-cycle.js";
+import { createCityLife } from "./city-life.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("game");
@@ -82,12 +84,15 @@ viewLight.position.set(0.25, 0.3, -0.4);
 camera.add(viewLight);
 
 const moonDirection = new THREE.Vector3(0.46, 0.76, 0.46).normalize();
+const lightDirection = moonDirection.clone();
+const sunDirection = new THREE.Vector3();
 const nightSky = new THREE.Group();
 nightSky.name = "Moon and stars";
 scene.add(nightSky);
 const sky = new THREE.Mesh(
   new THREE.SphereGeometry(258, 32, 16),
   new THREE.ShaderMaterial({
+    uniforms: { daylight: {value: 1}, twilight: {value: 0} },
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
@@ -100,12 +105,17 @@ const sky = new THREE.Mesh(
     `,
     fragmentShader: `
       varying vec3 vSkyPosition;
+      uniform float daylight;
+      uniform float twilight;
       void main() {
         float height = clamp(normalize(vSkyPosition).y, 0.0, 1.0);
         vec3 horizon = vec3(0.035, 0.075, 0.135);
         vec3 zenith = vec3(0.002, 0.008, 0.028);
         vec3 color = mix(horizon, zenith, pow(height, 0.58));
         color += vec3(0.018, 0.03, 0.045) * exp(-height * 12.0);
+        vec3 dayColor = mix(vec3(0.64,0.76,0.81),vec3(0.12,0.39,0.68),pow(height,0.5));
+        color = mix(color,dayColor,daylight);
+        color += vec3(0.22,0.06,0.01) * twilight * exp(-height*5.0);
         gl_FragColor = vec4(color, 1.0);
       }
     `,
@@ -196,6 +206,10 @@ moon.position.copy(moonDirection).multiplyScalar(222);
 moon.scale.set(18, 18, 1);
 moon.name = "Moon";
 nightSky.add(moon);
+const sun = new THREE.Sprite(new THREE.SpriteMaterial({map:moonTexture,color:0xffe6ac,transparent:true,depthWrite:false,fog:false}));
+sun.scale.set(15,15,1);
+sun.name = "Sun";
+nightSky.add(sun);
 
 const pmremGenerator = new THREE.PMREMGenerator(renderer);
 scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -275,7 +289,8 @@ scene.add(moonLight);
 let shadowUpdateElapsed = Infinity;
 
 const arena = buildArena(THREE, scene);
-const surfaceNavigation = createNavigator({ colliders: arena.colliders, bounds: arena.bounds, isGround: arena.isDryLand });
+let surfaceNavigation = createNavigator({ colliders: arena.colliders, bounds: arena.bounds, isGround: arena.isDryLand });
+const cityLife = createCityLife(THREE, scene, arena, surfaceNavigation);
 const tunnelNavigation = createNavigator({ colliders: arena.colliders,
   bounds: { min: {x:-58,z:47}, max: {x:39,z:53} }, floorY: arena.tunnel.floorY, step: .6 });
 const guidance = { path: null, goal: null, label: "", nextUpdate: 0, key: "" };
@@ -363,7 +378,10 @@ const game = {
   insertionUntil: Infinity,
   tourIndex: -1,
   tourDiscovered: new Set(),
+  worldMinutes: DEFAULT_TIME,
+  restedHours: 0,
 };
+let cycle = timeOfDay(game.worldMinutes);
 
 const player = {
   position: arena.mission.playerStart.clone(),
@@ -416,6 +434,12 @@ camera.rotation.set(player.pitch, player.yaw, 0);
 
 if (import.meta.env.DEV) {
   globalThis.__acreDebug = {
+    setWorldMinutes(value) {
+      if(!Number.isFinite(value)||value<0)throw new Error("Invalid world time");
+      game.worldMinutes=value;updateWorldTime(0,false);
+      cityLife.update(0,cycle,player,game.inTunnel);updateTunnelAtmosphere(1);
+      guidance.nextUpdate=0;
+    },
     teleport(x, z, yaw = player.yaw, floorY = 0, pitch = player.pitch) {
       guidance.nextUpdate = 0;
       player.floorY = floorY;
@@ -454,6 +478,9 @@ if (import.meta.env.DEV) {
         player: player.position.toArray(),
         inTunnel: game.inTunnel,
         detection: game.detection,
+        worldMinutes: game.worldMinutes,
+        cycle: {...cycle, gateClosed:cityLife.closed, population:cityLife.population},
+        access: accessAt(player.position,cycle,game.inTunnel),
         guidance: { label: guidance.label, path: guidance.path, goal: guidance.goal },
         wallGuards: guards
           .filter((guard) => guard.wallPatrol)
@@ -1042,6 +1069,7 @@ function createGuard(index, position, options = {}) {
     target: root.position.clone(),
     lastSeen: root.position.clone(),
     awareness: 0,
+    identifiedUntil: 0,
     searchUntil: 0,
     navigationUntil: 0,
     path: null,
@@ -1368,6 +1396,7 @@ function nearestWallHit(origin, direction) {
   let bestDistance = Infinity;
   const hit = new THREE.Vector3();
   for (const box of arena.colliders) {
+    if (box.enabled === false) continue;
     if (ray.intersectBox(box, hit)) {
       const distance = origin.distanceTo(hit);
       if (distance > 0.1 && distance < bestDistance) bestDistance = distance;
@@ -1393,7 +1422,7 @@ function updateMoonExposure(dt) {
     } else {
       moonProbeOrigin.copy(player.position);
       moonProbeOrigin.y += 0.12;
-      const moonClearance = nearestWallHit(moonProbeOrigin, moonDirection);
+      const moonClearance = nearestWallHit(moonProbeOrigin, lightDirection);
       game.targetMoonExposure = moonClearance > 72 ? 1 : 0.08;
     }
     game.moonlit = game.targetMoonExposure > 0.5;
@@ -1413,6 +1442,7 @@ function boxCollides(position) {
   // swimmer pass beneath a wall whose visible mesh begins at ground level.
   const topY = player.inWater && !game.inTunnel ? Math.max(position.y, 0.25) : position.y;
   for (const box of arena.colliders) {
+    if (box.enabled === false) continue;
     if (
       position.x + player.radius > box.min.x &&
       position.x - player.radius < box.max.x &&
@@ -1430,7 +1460,7 @@ function boxCollides(position) {
 function guardBlocked(position) {
   return !arena.isDryLand(position.x, position.z) || arena.colliders.some(
     (box) =>
-      position.x + 0.42 > box.min.x &&
+      box.enabled !== false && position.x + 0.42 > box.min.x &&
       position.x - 0.42 < box.max.x &&
       position.z + 0.42 > box.min.z &&
       position.z - 0.42 < box.max.z &&
@@ -1780,6 +1810,9 @@ function updateGuards(dt) {
   }
 
   let mostAware = null;
+  const access = accessAt(player.position, cycle, game.inTunnel);
+  const crowdMask = cityLife.crowdMask(player.position);
+  const soundScale = hearingScale(cycle, crowdMask);
   for (const guard of guards) {
     guard.root.visible = true;
     guard.phase += dt;
@@ -1789,7 +1822,8 @@ function updateGuards(dt) {
     const fullDetail = distance < 22;
     guard.detailRoot.visible = fullDetail;
     guard.farBody.visible = !fullDetail;
-    guard.visionCone.visible = distance < 34;
+    const suspicious = access.suspicious || game.elapsed < guard.identifiedUntil;
+    guard.visionCone.visible = distance < 34 && suspicious;
     const moonVisibility = 0.62 + game.moonExposure * 0.38;
     const sightRange = player.inWater
       ? 9
@@ -1797,18 +1831,20 @@ function updateGuards(dt) {
         ? 12.5
         : 15;
     const seesPlayer =
+      suspicious &&
       !player.submerged &&
       !devGuardAudioTest &&
       game.elapsed >= game.insertionUntil &&
       guardCanSee(
         guard,
         player.position,
-        sightRange * moonVisibility,
+        sightRange * moonVisibility * (1 + cycle.daylight * 0.7),
         66,
       );
     const ear = guard.root.position.clone().add(new THREE.Vector3(0, 1.55, 0));
-    const hearingRadius = (2.2 + player.noise * 0.115) * (clearLineOfSight(ear, player.position) ? 1 : .28);
+    const hearingRadius = (2.2 + player.noise * 0.115) * soundScale * (clearLineOfSight(ear, player.position) ? 1 : .28);
     const hearsPlayer =
+      (suspicious || player.noise > 70) &&
       !player.submerged &&
       !devGuardAudioTest &&
       distance < hearingRadius &&
@@ -1818,7 +1854,7 @@ function updateGuards(dt) {
     if (!devGuardAudioTest) {
       for (const event of worldNoiseEvents) {
         const eventDistance = guard.root.position.distanceTo(event.position);
-        const eventRadius = (2.2 + event.strength * 0.115) * (clearLineOfSight(ear, event.position) ? 1 : .32);
+        const eventRadius = (2.2 + event.strength * 0.115) * soundScale * (clearLineOfSight(ear, event.position) ? 1 : .32);
         const score = event.strength - eventDistance * 4;
         if (eventDistance < eventRadius && score > heardWorldNoiseScore) {
           heardWorldNoise = event;
@@ -1828,6 +1864,7 @@ function updateGuards(dt) {
     }
 
     if (seesPlayer) {
+      guard.identifiedUntil = game.elapsed + 30;
       guard.searchUntil = game.elapsed + 5;
       guard.lastSeen.copy(player.position);
       const proximity = THREE.MathUtils.clamp(1.35 - distance / 22, 0.5, 1.2);
@@ -1838,7 +1875,7 @@ function updateGuards(dt) {
           : player.noise > 70
             ? 1.35
             : 1;
-      const illumination = 0.48 + game.moonExposure * 0.62;
+      const illumination = 0.48 + game.moonExposure * 0.62 + cycle.daylight * 0.45;
       guard.awareness += dt * 48 * proximity * posture * illumination;
       guard.state = "suspicious";
     } else {
@@ -1988,6 +2025,7 @@ function updateGuards(dt) {
         muffled: audioSpatial.muffled,
         submerged: player.submerged,
         armor: (footstepIndex + guard.index) % 4 === 0,
+        masking: 1 - cycle.activity * 0.25 - crowdMask * 0.25,
       });
     }
     if (
@@ -2228,19 +2266,89 @@ function updateArena(dt) {
   }
 }
 
+function updateWorldTime(dt, announce = true) {
+  const wasNight = cycle.night;
+  game.worldMinutes += dt * MINUTES_PER_REAL_SECOND;
+  cycle = timeOfDay(game.worldMinutes);
+  const occupants = [player.position, ...guards.filter(g=>!g.wallPatrol).map(g=>g.root.position)];
+  if (cityLife.setClosed(cycle.night, occupants)) {
+    arena.gateClosed = cityLife.closed;
+    surfaceNavigation = createNavigator({colliders:arena.colliders,bounds:arena.bounds,isGround:arena.isDryLand});
+    guidance.nextUpdate = 0;
+    guards.forEach(guard=>{guard.navigationUntil=0;});
+    renderer.shadowMap.needsUpdate = true;
+    if (mapVisible) drawCityMap();
+  }
+  if (announce && wasNight !== cycle.night) {
+    addFeed(cycle.night ? "NIGHTFALL · GATE CLOSING · KEEP UNSEEN" : "DAWN · GATE OPEN · PUBLIC STREETS WELCOME YOU");
+    audio.timeBell();
+  }
+  const angle = (cycle.minute / 60 - 6) / 12 * Math.PI;
+  sunDirection.set(Math.cos(angle),Math.max(0.04,Math.sin(angle)),0.45).normalize();
+  sun.position.copy(sunDirection).multiplyScalar(222);
+  sun.material.opacity = cycle.daylight;
+  sun.visible = cycle.daylight > 0.01;
+  moon.material.opacity = 1-cycle.daylight;
+  stars.material.opacity = 0.82*(1-cycle.daylight);
+  sky.material.uniforms.daylight.value = cycle.daylight;
+  sky.material.uniforms.twilight.value = 4*cycle.daylight*(1-cycle.daylight);
+  lightDirection.copy(moonDirection).lerp(sunDirection,cycle.daylight).normalize();
+  moonTarget.position.set(player.position.x,0,player.position.z);
+  moonLight.position.copy(player.position).addScaledVector(lightDirection,92);
+  ambient.color.setRGB(0.326+cycle.daylight*.47,0.424+cycle.daylight*.43,0.616+cycle.daylight*.31);
+  ambient.groundColor.setRGB(0.031+cycle.daylight*.23,0.043+cycle.daylight*.19,0.078+cycle.daylight*.1);
+  moonLight.color.setRGB(0.663+cycle.daylight*.337,0.78+cycle.daylight*.15,1-cycle.daylight*.24);
+  surfaceFogColor.setRGB(0.075+cycle.daylight*.45,0.141+cycle.daylight*.51,0.227+cycle.daylight*.51);
+  surfaceBackgroundColor.copy(surfaceFogColor);
+  arena.setDaylight(cycle.daylight);
+  document.documentElement.dataset.timeOfDay = cycle.label.toLowerCase();
+  $("world-clock").textContent = `${cycle.clock} · ${cycle.label}`;
+  $("gate-status").textContent = cityLife.closed ? "GATE CLOSED · OPENS 06:00" : cycle.night ? "GATE CLOSING · CLEAR THE PASSAGE" : "GATE OPEN · CLOSES 18:00";
+  $("city-rhythm").textContent = cycle.activity>.5 ? "Busy streets · footsteps masked" : "Few people · sound carries";
+  $("map-time").textContent = `Day ${cycle.day} · ${cycle.clock} · ${cityLife.closed?"Land gate closed":"Land gate open"}`;
+  $("pause-time").textContent = `Day ${cycle.day} · ${cycle.clock} · ${cityLife.closed?"Gate closed":"Gate open"}`;
+  $("rest-button").disabled = !canRest({...game,inWater:player.inWater});
+}
+
+function restOneHour() {
+  if (!canRest({...game,inWater:player.inWater})) {
+    addFeed(player.inWater ? "REACH DRY GROUND TO REST" : "CANNOT REST NOW");
+    return;
+  }
+  keys.clear();mouseButtons.clear();player.velocity.set(0,0,0);
+  game.interaction=0;game.tunnelInteraction=0;game.seaWallInteraction=0;
+  player.noise=0;
+  game.worldMinutes+=60;game.restedHours++;
+  updateWorldTime(0);
+  guidance.nextUpdate=0;
+  cityLife.update(0,cycle,player,game.inTunnel);
+  updateTunnelAtmosphere(1);
+  updateHUD();
+  if(game.phase==="paused") showHUD(false);
+  if(mapVisible) drawCityMap();
+  renderer.shadowMap.needsUpdate=true;
+  composer.render();
+  $("rest-feedback").textContent = `One hour passes · Day ${cycle.day} · ${cycle.clock}`;
+  $("rest-feedback").classList.add("show");
+  clearTimeout(restFeedbackTimer);
+  restFeedbackTimer=setTimeout(()=>$("rest-feedback").classList.remove("show"),1800);
+  // Rest does not erase a witness's memory or make a restricted location safe.
+}
+let restFeedbackTimer;
+
 function updateTunnelAtmosphere(dt) {
   const underground = game.inTunnel;
   const submerged = player.submerged;
   const blend = 1 - Math.exp(-dt * 4.5);
   ambient.intensity = THREE.MathUtils.damp(
     ambient.intensity,
-    underground ? 0.12 : submerged ? 0.2 : 0.38,
+    underground ? 0.12 : submerged ? 0.2 + cycle.daylight*.4 : 0.38 + cycle.daylight*1.35,
     4.5,
     dt,
   );
   moonLight.intensity = THREE.MathUtils.damp(
     moonLight.intensity,
-    underground ? 0.03 : submerged ? 0.12 : 1.16,
+    underground ? 0.03 : submerged ? 0.12 : 1.16 + cycle.daylight*1.9,
     4.5,
     dt,
   );
@@ -2252,7 +2360,7 @@ function updateTunnelAtmosphere(dt) {
   );
   scene.environmentIntensity = THREE.MathUtils.damp(
     scene.environmentIntensity,
-    underground ? 0.12 : submerged ? 0.08 : 0.24,
+    underground ? 0.12 : submerged ? 0.08 : 0.24 + cycle.daylight*.35,
     4.5,
     dt,
   );
@@ -2393,7 +2501,8 @@ function updateHUD() {
   $("moon-bar").style.width = `${Math.max(2, moonExposure * 100)}%`;
   $("moon-bar").style.background =
     moonExposure > 0.7 ? "#c4dcff" : moonExposure > 0.3 ? "#86addd" : "#496786";
-  const moonState = moonExposure > 0.7 ? "MOONLIT" : moonExposure > 0.3 ? "DAPPLED" : "SHELTERED";
+  const moonState = moonExposure > 0.7 ? (cycle.daylight>.5?"SUNLIT":"MOONLIT") : moonExposure > 0.3 ? "DAPPLED" : "SHELTERED";
+  $("light-label").textContent = cycle.daylight>.5 ? "SUN EXPOSURE" : "MOON EXPOSURE";
   $("moon-state").textContent = moonState;
   $("moon-panel").classList.toggle("exposed", moonExposure > 0.7);
   $("moon-panel").classList.toggle("dappled", moonExposure > 0.3 && moonExposure <= 0.7);
@@ -2415,7 +2524,7 @@ function updateHUD() {
   $("waypoint-distance").textContent = guidance.path ? `${Math.round(routeLength(guidance.path))} PACES · VIA LANES` : "CHECK YOUR MAP";
   $("waypoint").classList.toggle("close", routeLength(guidance.path) < 4);
   $("map-objective").textContent = guidance.label;
-  $("watch-state").textContent = game.detection > 65 ? "YOU ARE BEING IDENTIFIED · BREAK SIGHT" : game.detection > 35 ? "WATCH IS SEARCHING · FIND COVER" : game.detection > 10 ? "SOMETHING WAS NOTICED" : "NO SIGN OF PURSUIT";
+  $("watch-state").textContent = game.detection > 65 ? "YOU ARE BEING IDENTIFIED · BREAK SIGHT" : game.detection > 35 ? "WATCH IS SEARCHING · FIND COVER" : game.detection > 10 ? "SOMETHING WAS NOTICED" : accessAt(player.position,cycle,game.inTunnel).label;
   $("watch-state").classList.toggle("danger", game.detection > 65);
   const firstMinute = game.missionTime < 24;
   $("travel-hint").classList.toggle("hidden", !firstMinute || game.detection > 35);
@@ -2536,7 +2645,7 @@ function updateGuardOrderGuide() {
 }
 
 function updateNavigation() {
-  const key = `${game.stage}:${game.inTunnel}:${game.enteredCity}:${game.tourIndex}:${player.inWater}`;
+  const key = `${game.stage}:${game.inTunnel}:${game.enteredCity}:${game.tourIndex}:${player.inWater}:${cityLife.closed}`;
   if (key === guidance.key && game.elapsed < guidance.nextUpdate) return;
   guidance.key = key;
   guidance.nextUpdate = game.elapsed + .85;
@@ -2555,6 +2664,11 @@ function updateNavigation() {
     guidance.path = tunnelNavigation.route(player.position, goal);
   } else {
     guidance.path = surfaceNavigation.route(player.position, goal);
+    if (!guidance.path && cityLife.closed && player.position.x>92 && player.position.z<-60) {
+      goal = {x:100,z:-71};
+      label = "Gate closed · R to rest · opens 06:00";
+      guidance.path = surfaceNavigation.route(player.position,goal);
+    }
     if (!guidance.path && !tour && game.stage === "extract") {
       goal = arena.tunnel.portals[0].surface;
       label = "Reach the Templar passage · hold E at stair";
@@ -2591,7 +2705,7 @@ function addFeed(text) {
 }
 
 function showHUD(show) {
-  ["top-hud", "bottom-hud", "compass", "waypoint", "map-key", "combat-feed", "watch-state"].forEach((id) => {
+  ["top-hud", "bottom-hud", "compass", "waypoint", "map-key", "combat-feed", "watch-state", "time-panel"].forEach((id) => {
     $(id).classList.toggle("hidden", !show);
   });
   if (!show) {
@@ -2636,8 +2750,11 @@ function selectEntryRoute(routeId) {
     button.classList.toggle("active", button.dataset.route === route.id);
   });
   $("route-status").innerHTML = `<i></i> INSERTION · ${route.name}`;
-  $("route-method").textContent = route.method;
-  $("route-description").textContent = route.description;
+  const closedGate = route.id === "gate" && cycle.night;
+  $("route-method").textContent = closedGate ? "CLOSED UNTIL DAWN" : route.method;
+  $("route-description").textContent = closedGate
+    ? "Gate closed until 06:00 · rest outside or choose a sea entry"
+    : route.description;
 }
 
 function selectGameMode(modeId) {
@@ -2661,6 +2778,7 @@ function deploy() {
     arena.entryRoutes.find((candidate) => candidate.id === selectedRouteId) ||
     arena.entryRoutes[0];
   const seaInsertion = route.id !== "gate";
+  game.worldMinutes = Number($("arrival-time").value);
   audio.unlock();
   audio.ambientStart();
   game.tourIndex = selectedModeId === "explore" ? 0 : -1;
@@ -2714,6 +2832,9 @@ function deploy() {
   game.enteredCity = !seaInsertion;
   game.seaWallInteraction = 0;
   game.insertionUntil = game.elapsed + (game.enteredCity ? 2.5 : 1.25);
+  updateWorldTime(0,false);
+  cityLife.update(0,cycle,player,game.inTunnel);
+  updateTunnelAtmosphere(1);
   if (devFastInteractions && !game.enteredCity) {
     keys.add("KeyE");
     setTimeout(() => keys.delete("KeyE"), 180);
@@ -2798,6 +2919,7 @@ function endGame(success) {
 document.addEventListener("keydown", (event) => {
   if (/^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;
   if (game.phase !== "running") return;
+  if(event.code==="KeyR"&&!event.repeat) { event.preventDefault();restOneHour();return; }
   if (["KeyW","KeyA","KeyS","KeyD","KeyE","KeyM","Space","ControlLeft"].includes(event.code)) event.preventDefault();
   keys.add(event.code);
   if (event.code === "KeyN" && !event.repeat && game.mode === "explore") {
@@ -2871,6 +2993,12 @@ document.querySelectorAll(".mode-option").forEach((button) => {
 $("resume-button").addEventListener("click", requestGamePointerLock);
 $("restart-button").addEventListener("click", () => location.reload());
 $("new-route-button").addEventListener("click", () => location.reload());
+$("rest-button").addEventListener("click", restOneHour);
+$("arrival-time").addEventListener("change",()=>{
+  game.worldMinutes=Number($("arrival-time").value);updateWorldTime(0,false);
+  selectEntryRoute(selectedRouteId);
+  cityLife.update(0,cycle,player,false);updateTunnelAtmosphere(1);
+});
 document.querySelectorAll("[data-setting]").forEach(input => {
   const name = input.dataset.setting;
   if (input.type === "checkbox") input.checked = settings[name];
@@ -3009,12 +3137,12 @@ function animate() {
   const frameWorkStarted = performance.now();
   const dt = Math.min(clock.getDelta(), 0.04);
   const playing = game.phase === "running" && !mapVisible;
-  if (playing) game.elapsed += dt;
+  if (playing) { game.elapsed += dt;updateWorldTime(dt); }
   gradePass.uniforms.time.value = settings.reducedMotion ? 0 : game.elapsed;
   shadowUpdateElapsed += dt;
   if (renderQuality.shadows && shadowUpdateElapsed >= 0.12) {
     moonTarget.position.set(player.position.x, 0, player.position.z);
-    moonLight.position.copy(player.position).addScaledVector(moonDirection, 92);
+    moonLight.position.copy(player.position).addScaledVector(lightDirection, 92);
     renderer.shadowMap.needsUpdate = true;
     shadowUpdateElapsed = 0;
   }
@@ -3024,6 +3152,8 @@ function animate() {
   if (playing) {
     game.missionTime += dt;
     updatePlayer(dt);
+    cityLife.update(dt,cycle,player,game.inTunnel);
+    audio.cityAmbience(dt,cycle.activity,cityLife.crowdMask(player.position),game.inTunnel||player.submerged);
     updateMoonExposure(dt);
     updateGuards(dt);
     if (game.phase === "running") updateMission(dt);
@@ -3137,4 +3267,7 @@ if (import.meta.env.DEV) {
   player.floorY = savedFloorY;
 }
 
+updateWorldTime(0,false);
+cityLife.update(0,cycle,player,false);
+updateTunnelAtmosphere(1);
 animate();

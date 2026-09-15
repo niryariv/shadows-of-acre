@@ -100,6 +100,17 @@ and does not change the guards' visibility calculations. Sound is muffled by
 stone; the simulated hearing ranges are chosen for playable stealth, not a
 claim about medieval acoustics.
 
+## Daily rhythm: explicit gameplay interpretation
+
+The day–night system suggests a working port becoming quieter after dark.
+The fixed 06:00 opening and 18:00 closing of the land gate, a 90-second game hour,
+universal daytime public access, restricted military courts, nighttime suspicion,
+and the displayed civilian traffic are deliberate gameplay rules. They are not
+claims about a surviving Acre curfew ordinance, exact solar times, access to the
+historical hospital, or the city's actual population. The one-hour rest action
+compresses time without simulating a historical lodging or sleep system.
+Sunlight changes direction; the stars retain their fixed field for readability.
+
 ## Primary research anchors
 
 - UNESCO World Heritage Centre, [Old City of Acre](https://whc.unesco.org/en/list/1042/)

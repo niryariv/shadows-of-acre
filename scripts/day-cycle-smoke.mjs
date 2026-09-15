@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import {timeOfDay, accessAt, hearingScale, canRest, MINUTES_PER_REAL_SECOND} from "../src/day-cycle.js";
+
+assert.equal(MINUTES_PER_REAL_SECOND*90,60);
+assert.equal(timeOfDay(359.99).night,true);
+assert.equal(timeOfDay(360).night,false);
+assert.equal(timeOfDay(1079.99).night,false);
+assert.equal(timeOfDay(1080).night,true);
+assert.equal(timeOfDay(1440).clock,"00:00");
+assert.equal(timeOfDay(1440).day,2);
+assert.equal(timeOfDay(600+24*60).clock,"10:00");
+const day=timeOfDay(720),night=timeOfDay(1200);
+assert.ok(day.daylight>night.daylight);
+assert.ok(day.population>night.population);
+assert.ok(hearingScale(day,1)<hearingScale(night,0));
+assert.equal(accessAt({x:9,z:0},day).suspicious,false);
+assert.equal(accessAt({x:9,z:0},night).suspicious,true);
+assert.equal(accessAt({x:-30,z:-41},day).suspicious,true);
+assert.equal(accessAt({x:-70,z:60},day).suspicious,true);
+assert.equal(accessAt({x:122,z:-71},night).suspicious,false);
+assert.equal(accessAt({x:-30,z:50},night,true).suspicious,false);
+assert.equal(canRest({phase:"running",inWater:false,compromised:false}),true);
+assert.equal(canRest({phase:"paused",inWater:false,compromised:false}),true);
+assert.equal(canRest({phase:"running",inWater:true,compromised:false}),false);
+assert.equal(canRest({phase:"ended",inWater:false,compromised:false}),false);
+assert.equal(canRest({phase:"running",inWater:false,compromised:true}),false);
+console.log("Day cycle: dawn/nightfall boundaries, rollover, daylight, crowds, hearing, access and rest rules passed.");

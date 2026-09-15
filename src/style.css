@@ -69,6 +69,17 @@ button { font: inherit; }
 
 .hud { position: fixed; z-index: 10; pointer-events: none; text-shadow: 0 2px 8px #000; }
 .hidden { display: none !important; }
+#time-panel { left:32px; top:206px; display:flex; flex-direction:column; gap:5px; padding:12px 14px; width:256px; background:#081411d9; border-left:2px solid #b59f6b; }
+#world-clock { color:#ebd6a8; font:19px Georgia,serif; }
+#time-panel span { color:#ced2ba; font-size:9px; letter-spacing:.06em; }
+#time-panel small { color:#a5b6a7; font-size:10px; }
+#time-panel kbd { min-width:22px; margin-top:5px; }
+.arrival-setting { display:flex; flex-wrap:wrap; align-items:center; gap:8px; color:#a7b9aa; font-size:10px; margin:12px 0; }
+.arrival-setting select { flex:1; padding:8px; background:#15201e; border:1px solid #ad967266; color:#eee0bf; font:12px system-ui; }
+.rest-note { display:block; color:#97a18f; font-size:11px; line-height:1.5; margin:12px 0; }
+button:disabled { opacity:.45; cursor:not-allowed; transform:none; }
+#rest-feedback { position:fixed; z-index:50; left:50%; bottom:24px; transform:translateX(-50%); max-width:calc(100vw - 32px); padding:16px 24px; background:#071310f2; color:#ecdfbd; border:1px solid #bb9e69; font:18px Georgia,serif; text-align:center; opacity:0; pointer-events:none; transition:opacity .2s; }
+#rest-feedback.show { opacity:1; }
 .mission-steps { display:flex; gap:20px; padding:0 0 12px 15px; color:#cbb68a; font:11px Georgia,serif; border-bottom:1px solid #ae916a44; }
 .comfort-settings { margin:14px 0; padding-top:12px; border-top:1px solid #ad967244; text-align:left; }
 .comfort-settings summary { cursor:pointer; color:#c5b78f; font-size:12px; padding:4px 0; }
@@ -467,6 +478,9 @@ button:hover { transform:translateY(-2px); filter:brightness(1.15); }
 .results b { color:var(--accent); font:700 34px "Arial Narrow", sans-serif; }
 
 @media (max-width: 720px) {
+  #time-panel { left:16px; top:auto; bottom:205px; width:220px; padding:8px 12px; }
+  .modal { overflow-y:auto; }
+  .modal > div { max-height:96vh; overflow-y:auto; }
   #top-hud { padding:16px; } .mission-block { display:none; }
   .score-block { width:100%; justify-content:space-between; text-align:center; }
   #compass { top:75px; } #bottom-hud { padding:18px 16px; }

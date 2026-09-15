@@ -36,12 +36,13 @@ click **Begin**. A keyboard and mouse are required; allow mouse capture.
 - Hold `E` — interact, enter/leave the Templar tunnel, take the dispatch, or board the skiff
 - Hold `M` — open the city map and pause the watch while planning
 - `N` / `Shift+N` — next / previous historical place in Exploration
+- `R` — rest for one game hour on dry ground (also available in the pause menu)
 - `V` — mute/unmute procedural audio
 - `Esc` — release the mouse and pause
 
 The player enters unarmed. Success depends entirely on completing the mission
 without being confirmed by the watch. Guards can see, hear, and investigate
-disturbances, so route choice, quiet movement, and darkness are the only tools.
+disturbances, so timing, route choice, crowds, quiet movement, and darkness are your tools.
 The start screen also offers **Exploration mode**. It keeps guard perception,
 objectives, discoveries, swimming, and traversal active, but visual
 confirmation cannot end the session; alarms become warnings so the city can be
@@ -58,10 +59,31 @@ sound along accessible lanes; intervening stone muffles their hearing.
 Brightness, mouse sensitivity and reduced camera motion are available in the
 opening screen and pause menu. Preferences are saved on the device. Returning
 from a pause clears held controls so the player cannot drift into danger.
-The mission unfolds beneath a bright Mediterranean moon: open ground makes the
-player easier to see, while buildings, walls, and the underground Templar tunnel
-provide shelter. The live **Moon Exposure** meter shows when moonlight is raising
-the risk of detection.
+The **Sun / Moon Exposure** meter follows the active light source. Open ground
+makes trespassers easier to see; buildings, walls and the Templar tunnel provide shelter.
+
+## Day, night and rest
+
+Arrive at 10:00 by default, or choose dusk, night or predawn in the opening screen.
+One game hour takes 90 seconds of active play. The map and pause menu freeze the
+clock; **Rest 1 hour** advances it by exactly an hour, including across midnight.
+Your position and mission progress are preserved. Rest clears held movement,
+but does not erase witnesses or rescue an already compromised mission.
+
+- **Day, 06:00–18:00:** the land gate is open. Ordinary walking in public streets
+  attracts no attention. More civilians circulate; market murmurs and footsteps
+  mask your noise. Sprinting and knocking things over can still draw investigation.
+- **Night, 18:00–06:00:** the gate physically closes, civilian traffic dwindles,
+  and guards challenge strangers inside the city. Darkness reduces sight range,
+  but small sounds carry farther. Ropes and the Templar tunnel remain useful.
+- **Military interiors:** the Hospitaller inner court and Templar fortress remain
+  restricted by day. Being seen trespassing creates a pursuit that continues if
+  you return to a public street. Daylight is not immunity from being caught.
+
+For example: walk through the gate in daylight, explore the public lanes, find
+a sheltered place, then use R to wait for darkness before approaching the dispatch.
+These fixed hours and crowd sizes are gameplay abstractions, not a population
+estimate or a documented medieval gate timetable.
 
 Rendering quality adapts to the device’s measured frame workload. The game uses
 single-pass animated water, shared guard resources and distance models,
@@ -80,9 +102,14 @@ npm run build
 routes, historical stops, the gate corridor and the complete tunnel route.
 Navigation tests independently sample suggested paths against player collision.
 These checks also run before each GitHub Pages deployment.
+`npm run test:time` checks day/night boundaries, rollover, hearing and access rules.
+The arena test also verifies that the shut gate cannot be bypassed on dry ground,
+reopens at dawn, and never closes through an occupant.
 
 For browser regression tests, run the development server, install Playwright
 in your development environment, then run `npm run test:browser`.
+`npm run test:time-browser` additionally exercises rest, gate transitions,
+daytime anonymity, nighttime detection, changing population and the frozen clock.
 `PLAYWRIGHT_MODULE`, `CHROME_PATH` and `ACRE_TEST_URL` can point to an existing
 Playwright installation, browser executable and development server. These tests
 exercise actual input and interactions; development-only teleportation positions

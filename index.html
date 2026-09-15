@@ -40,7 +40,7 @@
         <section class="score-block">
           <div><span>DETECTION</span><b id="detection">00%</b></div>
           <div><span>PROFILE</span><b id="profile">GHOST</b></div>
-          <div><span>TIME</span><b id="timer">00:00</b></div>
+          <div><span>ACTIVE TIME</span><b id="timer">00:00</b></div>
         </section>
       </header>
 
@@ -64,6 +64,13 @@
       <div id="map-key" class="hud hidden"><kbd>M</kbd> HOLD // CITY MAP</div>
       <div id="watch-state" class="hud hidden">NO SIGN OF PURSUIT</div>
       <div id="travel-hint" class="hud hidden"></div>
+      <section id="time-panel" class="hud hidden" aria-label="Time and city activity">
+        <b id="world-clock">10:00 · DAY</b>
+        <span id="gate-status">GATE OPEN · CLOSES 18:00</span>
+        <small id="city-rhythm">Busy streets mask footsteps</small>
+        <span><kbd>R</kbd> REST 1 HOUR</span>
+      </section>
+      <div id="rest-feedback" role="status" aria-live="polite"></div>
 
       <section id="city-map" class="hidden" aria-label="Map of Acre">
         <div class="map-frame">
@@ -73,6 +80,7 @@
               <h2>ST JEAN D’ACRE</h2>
               <small class="map-basis">c. 1250 · HISTORIC PLACES, RECONSTRUCTED STREETS</small>
               <p id="map-objective">I · REACH THE HOSPITALLER COURT</p>
+              <small id="map-time">Day 1 · 10:00 · Land gate open</small>
             </div>
             <b aria-label="North">N<br /><i>↑</i></b>
           </header>
@@ -149,7 +157,7 @@
           <section id="moon-panel" class="moon-panel">
             <span class="moon-icon">☾</span>
             <div class="meter-copy">
-              <span>MOON EXPOSURE</span>
+              <span id="light-label">SUN EXPOSURE</span>
               <div class="meter moon-meter"><i id="moon-bar"></i></div>
             </div>
             <b id="moon-state">SHELTERED</b>
@@ -179,7 +187,9 @@
           <p>
             A sealed dispatch waits in the Hospitaller court. Cross the merchant
             quarters and bring it to the harbour skiff. You carry no weapon.
-            Watch the patrols, listen for footsteps, and keep to the shadows.
+            Walk openly in public streets by day. Rest until night to slip
+            into guarded compounds. At nightfall the gate shuts and the watch
+            challenges strangers; quiet streets make footsteps easier to hear.
           </p>
           <ol class="mission-steps"><li>Enter the city</li><li>Recover the dispatch</li><li>Leave unseen</li></ol>
           <div class="route-heading">
@@ -203,6 +213,14 @@
           <p id="route-description" class="route-description">
             Longest approach · broad sightlines · no climb
           </p>
+          <label class="arrival-setting" for="arrival-time">ARRIVAL TIME
+            <select id="arrival-time">
+              <option value="600" selected>10:00 · Day · gate open</option>
+              <option value="1020">17:00 · Dusk approaching</option>
+              <option value="1200">20:00 · Night · gate closed</option>
+              <option value="300">05:00 · Before dawn</option>
+            </select>
+          </label>
           <div class="mode-heading">
             <span>CHOOSE EXPERIENCE</span>
             <strong id="mode-method">STEALTH MISSION</strong>
@@ -226,6 +244,7 @@
             <span><kbd>M</kbd> HOLD CITY MAP</span>
             <span><kbd>V</kbd> MUTE AUDIO</span>
             <span><kbd>ESC</kbd> PAUSE</span>
+            <span><kbd>R</kbd> REST 1 HOUR</span>
           </div>
           <button id="deploy-button">BEGIN INFILTRATION <i>→</i></button>
           <small>Keyboard & mouse required · Headphones recommended</small>
@@ -259,6 +278,10 @@
           <span class="kicker">THE CITY WAITS</span>
           <h2>PAUSED</h2>
           <p id="pause-copy">Take your time. The watch is paused.</p>
+          <p id="pause-time">Day 1 · 10:00 · Gate open</p>
+          <button id="rest-button" class="secondary-button">REST 1 HOUR</button>
+          <small class="rest-note">Time advances only during play. One game hour takes 90 seconds.
+            Rest on dry ground; it does not erase a guard's memory.</small>
           <div class="comfort-settings">
             <label>Brightness <input type="range" data-setting="brightness" min="0.8" max="1.5" step="0.05" value="1.08" /></label>
             <label>Mouse sensitivity <input type="range" data-setting="sensitivity" min="0.4" max="2" step="0.1" value="1" /></label>

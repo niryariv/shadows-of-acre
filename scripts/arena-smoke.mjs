@@ -865,6 +865,20 @@ try {
     );
   }
 
+  const {createCityLife}=await vite.ssrLoadModule("/src/city-life.js");
+  const life=createCityLife(THREE,scene,arena,navigator);
+  const cycleNav=()=>createNavigator({colliders:arena.colliders,bounds:arena.bounds,isGround:arena.isDryLand});
+  if(!cycleNav().route(arena.mission.playerStart,arena.mission.target))throw Error("Open gate blocks entry");
+  life.setClosed(true,[new THREE.Vector3(92,1.72,-71)]);
+  if(life.closed)throw Error("Gate closed through an occupant");
+  life.setClosed(true,[]);
+  life.setClosed(true,[new THREE.Vector3(92.9,1.72,-71)]);
+  if(!life.closed||cycleNav().route(arena.mission.playerStart,arena.mission.target))throw Error("Closed land gate is bypassable on foot");
+  if(!cycleNav().route(arena.entryRoutes[1].arrival,arena.mission.target))throw Error("Closing gate blocked sea insertion");
+  life.setClosed(false,[]);
+  if(!cycleNav().route(arena.mission.playerStart,arena.mission.target))throw Error("Dawn did not reopen gate navigation");
+  console.log("Gate cycle: blocked at night, sea route intact, occupant protected, dawn route restored.");
+
   console.log(JSON.stringify({
     renderBudget: budget,
     colliders: arena.colliders.length,

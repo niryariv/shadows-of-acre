@@ -20,6 +20,7 @@ export class StealthAudio {
     this.lastObjectImpact = null;
     this.ambientRequested = false;
     this.ambientNodes = null;
+    this.nextCityCue = 0;
   }
 
   async unlock() {
@@ -136,6 +137,7 @@ export class StealthAudio {
     muffled = false,
     submerged = false,
     armor = false,
+    masking = 1,
   } = {}) {
     const audibleRange = submerged ? 13 : muffled ? 16 : 24;
     const proximity = Math.max(0, Math.min(1, 1 - distance / audibleRange));
@@ -156,6 +158,7 @@ export class StealthAudio {
     try {
       const t = this.context.currentTime;
       const strength =
+        masking *
         Math.pow(proximity, 0.78) *
         (alerted ? 1.2 : 1) *
         (approach > 0.22 ? 1.08 : approach < -0.22 ? 0.86 : 0.96);
@@ -272,6 +275,33 @@ export class StealthAudio {
     } catch {}
   }
 
+  timeBell() {
+    if (!this._canPlay()) return;
+    try {
+      const t=this.context.currentTime;
+      for(const delay of [0,.8]) {
+        this._tone(t+delay,1.8,220,218,.06,"sine",-.35,.003);
+        this._tone(t+delay,1.2,587,581,.035,"sine",-.35,.003);
+      }
+    } catch {}
+  }
+
+  cityAmbience(dt, activity, nearby, indoors) {
+    this.nextCityCue-=dt;
+    if(this.nextCityCue>0||!this._canPlay())return;
+    this.nextCityCue=1.1+Math.random()*1.5;
+    if(indoors||activity<.12||nearby<.05)return;
+    try {
+      const t=this.context.currentTime, level=activity*nearby, pan=(Math.random()-.5)*1.6;
+      // Indistinct market voices and soles on stone: no anachronistic dialogue.
+      for(let i=0;i<3;i++) {
+        this._noise(t+i*.18,.16,.04*level,360+i*170,"bandpass",3,pan,.015);
+        this._tone(t+i*.18,.14,130+i*18,100+i*15,.018*level,"triangle",pan,.02);
+      }
+      this._noise(t+.7,.07,.07*level,680,"bandpass",.8,-pan);
+    } catch {}
+  }
+
   _ensureContext() {
     if (this.context) return this.context;
 
@@ -332,6 +362,10 @@ export class StealthAudio {
     envelope.connect(output);
     source.start(start, Math.random() * 0.8, duration + 0.015);
     source.stop(start + duration + 0.02);
+    source.onended = () => {
+      source.disconnect(); filter.disconnect(); envelope.disconnect();
+      if(output !== this.master) output.disconnect();
+    };
   }
 
   _tone(
@@ -368,6 +402,10 @@ export class StealthAudio {
     envelope.connect(output);
     oscillator.start(start);
     oscillator.stop(end + 0.01);
+    oscillator.onended = () => {
+      oscillator.disconnect(); envelope.disconnect();
+      if(output !== this.master) output.disconnect();
+    };
   }
 
   _click(start, volume = 0.12, pan = 0) {

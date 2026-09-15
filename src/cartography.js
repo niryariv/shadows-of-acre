@@ -24,7 +24,7 @@ export function createCartographer(canvas) {
       if (fill) { ctx.fillStyle = fill; ctx.fill(); }
       ctx.strokeStyle = color; ctx.lineWidth = weight; ctx.stroke();
     };
-    const key = `${pixelsX}:${pixelsY}`;
+    const key = `${pixelsX}:${pixelsY}:${arena.gateClosed}`;
     if (cacheKey !== key) {
       cacheKey = key; cache.width = pixelsX; cache.height = pixelsY;
       const ctx = cache.getContext("2d"); ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -36,7 +36,7 @@ export function createCartographer(canvas) {
       ACRE_PLAN.districts.forEach(d => line(ctx, d.polygon, "#927d5138", .5, true, d.tone));
       ACRE_PLAN.roads.forEach(road => line(ctx, road.points, "#f5e9cf", road.kind === "primary" ? 4.2 * scale : 2.7 * scale));
       for (const box of arena.colliders) {
-        if (box.mapVisible === false || box.max.y <= 0 || box.min.y >= 1.72) continue;
+        if (box.enabled === false || box.mapVisible === false || box.max.y <= 0 || box.min.y >= 1.72) continue;
         const [x, z] = project(box.min.x, box.min.z);
         const w = (box.max.x - box.min.x) * scale, d = (box.max.z - box.min.z) * scale;
         ctx.fillStyle = box.max.y > 4 ? "#9b8160" : "#b7a080";
